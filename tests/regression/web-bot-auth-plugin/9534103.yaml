@@ -1,0 +1,109 @@
+---
+meta:
+  author: "web-bot-auth-plugin"
+  description: >-
+    The verifier (rule 9534103) on real signed requests. lua/tests/live/ftw.sh
+    runs these: go-ftw sends each request through lua/tests/live/ftw-agent.ts,
+    which signs it as the test bot when it carries X-WBA-Sign, and the
+    test-only rule 9534930 writes the outcome to the log (the plugin's own
+    rules are nolog). CRS runs at paranoia level 4, blocking, in front of a
+    backend that does not answer: 502 means every rule let the request through.
+rule_id: 9534103
+tests:
+  - test_id: 1
+    desc: "Signed now by the test bot, whose key the WAF holds: verified, and no CRS rule refuses it"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: valid
+        output:
+          status: 502
+          log:
+            match_regex: 'WBA-RESULT status=verified reason= agent=https://test-agent\.example/\.well-known/http-message-signatures-directory'
+  - test_id: 2
+    desc: "No signature: not-signed, and the request goes on as before"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+        output:
+          status: 502
+          log:
+            match_regex: 'WBA-RESULT status=not-signed reason=no-signature '
+  - test_id: 3
+    desc: "Signed 10 minutes ago, expired 5 minutes ago: invalid/expired"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: expired
+        output:
+          log:
+            match_regex: 'WBA-RESULT status=invalid reason=expired '
+  - test_id: 4
+    desc: "One bit of the signature changed: invalid/bad-signature, never verified"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: tampered
+        output:
+          log:
+            match_regex: 'WBA-RESULT status=invalid reason=bad-signature '
+  - test_id: 5
+    desc: "A valid signature from a key the WAF's key store does not hold: unverified/unknown-key"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: unknown-key
+        output:
+          log:
+            match_regex: 'WBA-RESULT status=unverified reason=unknown-key '
+  - test_id: 6
+    desc: "A valid signature made for another site (Host other.example, not in tx.wba_site_names): invalid/foreign-authority"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: other.example
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: valid
+        output:
+          log:
+            match_regex: 'WBA-RESULT status=invalid reason=foreign-authority '

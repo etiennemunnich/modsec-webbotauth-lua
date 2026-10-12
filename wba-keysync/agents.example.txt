@@ -1,0 +1,25 @@
+# Signature-Agent URLs this site recognises, one per line; "#" starts a
+# comment line. Write it by hand, or from your bots.yaml:
+#   bun wba-keysync/agents.ts bots.yaml --out agents.txt
+# Only these are ever fetched, and only their keys can ever
+# produce tx.wba_status=verified.
+#
+#   https://host[:port]                     a key directory (the default type):
+#                                           wba-keysync fetches
+#                                           <origin>/.well-known/http-message-signatures-directory
+#   https://host/path type=jwks_uri         a JWK Set, fetched as written
+#   https://host/path type=cimd             an OAuth Client ID Metadata Document
+#                                           (its client_id must be this URL);
+#                                           keys from its jwks or jwks_uri
+#
+# A request's identifier is the URL with any query and fragment dropped
+# (draft 5.5), so list each URL once. IPv6 literals work: https://[2001:db8::1]:8443
+#
+# Note: Cloudflare's public example agent,
+#   https://http-message-signatures-example.research.cloudflare.com
+# publishes the RFC 9421 test key, which wba-keysync rejects by design
+# (draft section 6.8). It is useful for checking connectivity, not trust.
+#
+# https://agent.example
+# https://agent.example/keys/jwks.json type=jwks_uri
+# https://agent.example/oauth/client type=cimd

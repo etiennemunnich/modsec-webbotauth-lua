@@ -1,0 +1,78 @@
+---
+meta:
+  author: "web-bot-auth-plugin"
+  description: >-
+    Recipe F (lua/wba/recipes.conf, rule 9534135): refuse a signature that
+    cannot be genuine (forged, or made for another site), and nothing else: an
+    expired signature or a key the WAF does not hold earns no penalty. Run by
+    lua/tests/live/ftw.sh, which loads recipes.conf after CRS.
+rule_id: 9534135
+tests:
+  - test_id: 1
+    desc: "One bit of the signature changed: refused by rule 9534135 (bad-signature)"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: tampered
+        output:
+          status: 403
+          log:
+            expect_ids: [9534135]
+  - test_id: 2
+    desc: "A valid signature made for another site: refused by rule 9534135 (foreign-authority)"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: other.example
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: valid
+        output:
+          status: 403
+          log:
+            expect_ids: [9534135]
+  - test_id: 3
+    desc: "An expired signature: not genuine-or-forged, just old, so rule 9534135 lets it through"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: expired
+        output:
+          status: 502
+          log:
+            no_expect_ids: [9534135]
+  - test_id: 4
+    desc: "A key the WAF does not hold (a bot mid-rotation looks like this): rule 9534135 lets it through"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: unknown-key
+        output:
+          status: 502
+          log:
+            no_expect_ids: [9534135]

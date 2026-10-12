@@ -1,0 +1,7 @@
+# Every report goes through a form, so it arrives with what is needed to
+# reproduce it. Security problems never go in an issue.
+blank_issues_enabled: false
+contact_links:
+  - name: Security problem
+    url: https://github.com/etiennemunnich/modsec-webbotauth-lua/blob/main/SECURITY.md
+    about: Tell Etienne privately, never in an issue.

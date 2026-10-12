@@ -1,0 +1,15 @@
+name: Other feedback
+description: Anything else, such as something that worked well, an idea or a question.
+labels: ["alpha-feedback"]
+body:
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Your feedback
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup, if it matters
+      description: CRS image tag, Finch or Docker, CRS paranoia level, anything in front of the WAF.

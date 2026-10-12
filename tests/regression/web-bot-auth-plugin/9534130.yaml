@@ -1,0 +1,93 @@
+---
+meta:
+  author: "web-bot-auth-plugin"
+  description: >-
+    Recipe A (lua/wba/recipes.conf, rule 9534130): paths under /agents need a
+    verified signature. Refused with 460, which the image's nginx turns into
+    403 with an Accept-Signature header (draft 5.3). Run by
+    lua/tests/live/ftw.sh, which loads recipes.conf after CRS.
+rule_id: 9534130
+tests:
+  - test_id: 1
+    desc: "Unsigned request for /agents/: refused by rule 9534130"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /agents/
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+        output:
+          status: 403
+          log:
+            expect_ids: [9534130]
+  - test_id: 2
+    desc: "The test bot's signature on /agents/: verified, so rule 9534130 lets it through"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /agents/
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: valid
+        output:
+          status: 502
+          log:
+            no_expect_ids: [9534130]
+            match_regex: 'WBA-RESULT status=verified '
+  - test_id: 3
+    desc: "An expired signature on /agents/ is not verified: refused by rule 9534130"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /agents/
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: expired
+        output:
+          status: 403
+          log:
+            expect_ids: [9534130]
+  - test_id: 4
+    desc: "/AGENTS/ is the same path to a server that ignores case: rule 9534130 lowercases first and refuses it"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /AGENTS/
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+        output:
+          status: 403
+          log:
+            expect_ids: [9534130]
+  - test_id: 5
+    desc: "/./agents/ is /agents/ once normalized: rule 9534130 normalizes first and refuses it"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /./agents/
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+        output:
+          status: 403
+          log:
+            expect_ids: [9534130]

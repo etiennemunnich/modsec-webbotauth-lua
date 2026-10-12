@@ -1,0 +1,31 @@
+---
+meta:
+  author: "web-bot-auth-plugin"
+  description: >-
+    The plugin's off switch (rules 9534109-9534111): with
+    tx.web-bot-auth-plugin_enabled=0 nothing verifies, so a valid signature
+    counts for nothing. The test-only site settings
+    (lua/tests/live/wba-test-site-config.conf, rule 9534918) turn the plugin
+    off for a request carrying X-WBA-Test: recipe-switch-off. Run by
+    lua/tests/live/ftw.sh, which loads recipes.conf after CRS.
+rule_id: 9534109
+tests:
+  - test_id: 1
+    desc: "The test bot's valid signature on /agents/ with the plugin off: not verified, so recipe A (9534130) refuses it"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /agents/
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Test: recipe-switch-off
+            X-WBA-Sign: valid
+        output:
+          status: 403
+          log:
+            expect_ids: [9534130]
+            match_regex: 'WBA-RESULT status=not-signed reason=no-signature '

@@ -1,0 +1,21 @@
+name: Docs problem
+description: A step that is wrong, missing or hard to follow.
+labels: ["alpha-feedback", "docs"]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: Which page and section?
+      placeholder: lua/wba/README.md, Set up, step 3
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong or unclear?
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: What would have helped?

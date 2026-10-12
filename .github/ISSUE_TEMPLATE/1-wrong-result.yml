@@ -1,0 +1,53 @@
+name: Wrong result
+description: A request the plugin judged wrongly, for example a real bot marked invalid.
+labels: ["alpha-feedback", "wrong-result"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing. For a security problem, do not use this form: see SECURITY.md.
+        Remove anything private from logs before you paste them.
+  - type: textarea
+    id: log-line
+    attributes:
+      label: The log line
+      description: The `{"event":"web-bot-auth",...}` line for the request, from the WAF's log.
+      render: json
+    validations:
+      required: true
+  - type: input
+    id: expected
+    attributes:
+      label: What should the result have been?
+      placeholder: verified
+    validations:
+      required: true
+  - type: dropdown
+    id: refused
+    attributes:
+      label: Did your WAF refuse the request?
+      options:
+        - "No"
+        - Yes, with 400
+        - Yes, with 403
+        - Yes, with 429
+        - Yes, with another status
+    validations:
+      required: true
+  - type: input
+    id: sender
+    attributes:
+      label: Which bot or signing library sent it?
+      placeholder: ExampleBot, or the web-bot-auth npm package 0.x
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      description: CRS image tag, Finch or Docker, CRS paranoia level, the settings you changed in web-bot-auth-config.conf, and anything in front of the WAF (load balancer, CDN).
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: The request headers help, but a signature can be reused until it expires, so share one only after its expiry time.

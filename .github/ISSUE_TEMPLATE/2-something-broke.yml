@@ -1,0 +1,48 @@
+name: Something broke
+description: A step failed, a tool crashed, or nginx would not start.
+labels: ["alpha-feedback", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "For a security problem, do not use this form: see SECURITY.md."
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it break?
+      options:
+        - Building the image
+        - Quick start
+        - wba-keysync (key sync, validate, report, sign, sweep)
+        - nginx or ModSecurity while running
+        - Running the tests
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: What did you run?
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: What did it print?
+      description: The error, and a few lines before it.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      description: Operating system, Finch or Docker and its version, Bun or Node and its version, CRS image tag.
+    validations:
+      required: true

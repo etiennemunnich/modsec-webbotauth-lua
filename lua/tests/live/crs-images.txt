@@ -1,0 +1,34 @@
+# owasp/modsecurity-crs nginx images for matrix.sh, one tag per line.
+# Selection (Docker Hub tag list, 2026-09-30): every CRS release whose first
+# nginx image was pushed on or after 2025-09-30, at that release's latest image
+# build that publishes linux/arm64 and linux/amd64 images; plus the two current
+# -lts images. 202607030707 (3.3.9, 4.25.0) published only a 386 image, so
+# those two releases use 202606290906. Refresh by re-applying the rule.
+# 2026-10-01: the 202609301109 builds (ModSecurity v3.0.17) added; the
+# 202609241109 builds (v3.0.16) kept, so both engine versions stay covered.
+# 2026-10-10: the 202610051210 builds added (CRS 4.30.0 and 4.25.2, fixing three
+# rule bypasses; Debian OpenSSL 3.5.7-1~deb13u3).
+3.3.8-nginx-202603150103
+3.3.9-nginx-202606290906
+3.3.10-nginx-202609230209
+4.19.0-nginx-202510180710
+4.20.0-nginx-202511100111
+4.21.0-nginx-202512071012
+4.22.0-nginx-202601060501
+4.23.0-nginx-202602250702
+4.24.0-nginx-202603010803
+4.24.1-nginx-202603150103
+4.25.0-nginx-202606290906
+4.25.1-nginx-202609230209
+4.26.0-nginx-202605200705
+4.27.0-nginx-202606290906
+4.28.0-nginx-202608131208
+4.29.0-nginx-202609241109
+4.29.0-nginx-202609301109
+4.30.0-nginx-202610051210
+3.3.10-nginx-202609241109-lts
+4.25.1-nginx-202609241109-lts
+3.3.10-nginx-202609301109-lts
+4.25.1-nginx-202609301109-lts
+3.3.10-nginx-202610051210-lts
+4.25.2-nginx-202610051210-lts

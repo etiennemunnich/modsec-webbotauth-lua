@@ -1,0 +1,44 @@
+---
+meta:
+  author: "web-bot-auth-plugin"
+  description: >-
+    The plugin exempts its three headers, and only those, from CRS rule 920274
+    (paranoia level 4: a strict character set for header values, which lacks
+    the ( ) and @ every Signature-Input holds). Run by lua/tests/live/ftw.sh
+    at paranoia level 4.
+rule_id: 920274
+tests:
+  - test_id: 1
+    desc: "A signed request (Signature-Agent, Signature-Input, Signature): 920274 does not fire, and the request gets through"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Sign: valid
+        output:
+          status: 502
+          log:
+            no_expect_ids: [920274]
+            match_regex: 'WBA-RESULT status=verified '
+  - test_id: 2
+    desc: "The same characters in any other header still fire 920274: the exemption is three headers wide"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-Not-A-Signature: 'sig1=("@authority")'
+        output:
+          log:
+            expect_ids: [920274]

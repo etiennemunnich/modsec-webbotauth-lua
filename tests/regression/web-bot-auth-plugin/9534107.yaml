@@ -1,0 +1,50 @@
+---
+meta:
+  author: "web-bot-auth-plugin"
+  description: >-
+    Rule 9534107: a signature header that cannot be read (RFC 9651 4.2) is
+    ignored by default, and refused with 400 only when the operator sets
+    tx.wba_malformed=reject. The test-only site settings
+    (lua/tests/live/wba-test-site-config.conf, rule 9534915) set it for a
+    request carrying X-WBA-Test: malformed-reject. Run by lua/tests/live/ftw.sh.
+rule_id: 9534107
+tests:
+  - test_id: 1
+    desc: "Unclosed inner list in Signature-Input with tx.wba_malformed=reject: refused with 400"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            X-WBA-Test: malformed-reject
+            Signature-Input: 'sig1=("@authority"'
+            Signature: "sig1=:AAAA:"
+        output:
+          status: 400
+          log:
+            expect_ids: [9534107]
+            match_regex: 'WBA-RESULT status=invalid reason=malformed-headers '
+  - test_id: 2
+    desc: "The same request with the default setting: treated as unsigned, not refused"
+    stages:
+      - input:
+          dest_addr: 127.0.0.1
+          port: 80
+          method: GET
+          uri: /
+          headers:
+            Host: example.com
+            User-Agent: "OWASP CRS test agent"
+            Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
+            Signature-Input: 'sig1=("@authority"'
+            Signature: "sig1=:AAAA:"
+        output:
+          status: 502
+          log:
+            no_expect_ids: [9534107]
+            match_regex: 'WBA-RESULT status=not-signed reason=unparsable-field '

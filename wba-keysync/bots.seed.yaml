@@ -1,0 +1,659 @@
+# bots.seed.yaml: the project's hand-made seed list of bots, every source
+# first-party (published by the bot's own operator). Copy it as the start of
+# your own bots.yaml, keep what you recognise, add your own, and check it:
+#
+#   bun wba-keysync/validate.ts bots.yaml
+#
+# then write agents.txt, the list key sync reads, from it:
+#
+#   bun wba-keysync/agents.ts bots.yaml --out agents.txt
+#
+# The catalogue, BOTS.md, is generated from this file and records what every
+# source answered:
+#
+#   bun wba-keysync/report.ts wba-keysync/bots.seed.yaml --catalogue --out wba-keysync/BOTS.md
+#
+# Fields:
+#   name         lower-case, unique
+#   operator     who runs the bot
+#   category     one of validate.ts CATEGORIES; each is defined by a trigger
+#                (crawler or fetcher, draft-meunier-webbotauth-registry-03
+#                3.2.4) and an AIPREF purpose (draft-ietf-aipref-vocab-08)
+#   purpose      AIPREF labels, only where the operator documents a use other
+#                than its category's
+#   docs         the operator's own pages about this bot: where the category,
+#                tokens and lists come from
+#   description  what the operator says the bot does, quoted verbatim from docs
+#   wba          where its signing keys live: an https origin, or a JWK Set URL
+#                with wba_type: jwks_uri
+#   ips          the operator's published IP list URLs
+#   rdns         reverse-DNS suffixes the operator documents, for
+#                forward-confirmed lookups
+#   user_agent   tokens; on their own they are only a claim
+#   user_agent_example  checked against the tokens
+#   cidrs        a hand-kept copy of the ranges: validate.ts reports how far it
+#                has drifted from the live list
+#   policy       your choice for this bot, read by lists.ts: allow (refuse whoever
+#                claims it from outside its list), deny, or log; none here, since
+#                the choice is yours
+#   claim_only   true when others send the same User-Agent token, so a claim
+#                from outside the list is never refused as an impostor
+#   robots       robots.txt product tokens, when they differ from the
+#                User-Agent tokens (robots.ts)
+# At the top, beside bots: policy_mode: log (the default: policies only log)
+# or enforce (policies refuse).
+#
+# Sources first verified (2026-09-29/30); docs and quotes
+# checked 2026-10-09. Re-verify with validate.ts, regenerate BOTS.md.
+
+bots:
+  # --- Search ---------------------------------------------------------------
+  - name: googlebot
+    operator: Google
+    category: search
+    docs: https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers
+    description: "Crawling preferences addressed to the Googlebot user agent affect Google Search (including Discover and all Google Search features)"
+    ips: https://developers.google.com/static/crawling/ipranges/common-crawlers.json
+    rdns: [googlebot.com, google.com]
+    user_agent: [Googlebot, Googlebot-Image, Googlebot-Video, Storebot-Google, Google-InspectionTool]
+  - name: bingbot
+    operator: Microsoft
+    category: search
+    note: "Bing's help page is rendered by script; its text is served at https://www.bing.com/webmasters/api/help/htmlcontent?ArticleId=8c184ec0. The 2012 post documents the reverse-DNS check."
+    docs:
+      - https://www.bing.com/webmasters/help/which-crawlers-does-bing-use-8c184ec0
+      - https://blogs.bing.com/webmaster/2012/8/How-to-Verify-that-Bingbot-is-Bingbot/
+    description: "Bingbot is our standard crawler and handles most of our crawling needs each day."
+    ips: https://www.bing.com/toolbox/bingbot.json
+    rdns: [search.msn.com]
+    user_agent: bingbot
+  - name: applebot
+    operator: Apple
+    category: search
+    docs: https://support.apple.com/en-us/119829
+    description: "The data crawled by Applebot is used to power various features, such as the search technology integrated into many..."
+    ips: https://search.developer.apple.com/applebot.json
+    rdns: [applebot.apple.com]
+    user_agent: Applebot
+  - name: duckduckbot
+    operator: DuckDuckGo
+    category: search
+    docs: https://duckduckgo.com/duckduckgo-help-pages/results/duckduckbot
+    description: "DuckDuckBot’s job is to constantly improve our search results and offer users the best and most secure search experience possible."
+    ips: https://duckduckgo.com/duckduckbot.json
+    user_agent: DuckDuckBot
+  - name: youbot
+    operator: You.com
+    category: search
+    docs: https://you.com/docs/youbot
+    description: "YouBot is the web crawler that powers the You.com search engine."
+    wba: https://you.com
+    user_agent: YouBot
+
+  # --- AI: training, search and user-triggered fetches ------------------------
+  - name: gptbot
+    operator: OpenAI
+    category: training
+    docs: https://developers.openai.com/api/docs/bots
+    description: "GPTBot is used to make our generative AI foundation models more useful and safe."
+    ips: https://openai.com/gptbot.json
+    user_agent: GPTBot
+  - name: oai-searchbot
+    operator: OpenAI
+    category: ai-search
+    docs: https://developers.openai.com/api/docs/bots
+    description: "OAI-SearchBot is used to surface websites in search results in ChatGPT’s search features."
+    ips: https://openai.com/searchbot.json
+    user_agent: OAI-SearchBot
+  - name: chatgpt-user
+    operator: OpenAI
+    category: user-fetch
+    docs: https://developers.openai.com/api/docs/bots
+    description: "When users ask ChatGPT or a CustomGPT a question, it may visit a web page with a ChatGPT-User agent."
+    ips: https://openai.com/chatgpt-user.json
+    user_agent: ChatGPT-User
+  # Anthropic publishes one IP list for its three bots.
+  - name: claudebot
+    operator: Anthropic
+    category: training
+    docs: https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler
+    description: "ClaudeBot helps enhance the utility and safety of our generative AI models by collecting web content that could potentially contribute to their training."
+    ips: https://claude.com/crawling/bots.json
+    user_agent: ClaudeBot
+  - name: claude-user
+    operator: Anthropic
+    category: user-fetch
+    docs: https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler
+    description: "Claude-User supports Claude AI users."
+    ips: https://claude.com/crawling/bots.json
+    user_agent: Claude-User
+    note: "Claude Code's web fetch and the Claude Agent SDK also send \"Claude-User (...)\" from the user's own machine and IP: trust the token only with an address on this list."
+    claim_only: true
+  - name: claude-searchbot
+    operator: Anthropic
+    category: ai-search
+    docs: https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler
+    description: "Claude-SearchBot navigates the web to improve search result quality for users."
+    ips: https://claude.com/crawling/bots.json
+    user_agent: Claude-SearchBot
+  - name: perplexitybot
+    operator: Perplexity
+    category: ai-search
+    docs: https://docs.perplexity.ai/docs/resources/perplexity-crawlers
+    description: "PerplexityBot is designed to surface and link websites in search results on Perplexity."
+    ips: https://www.perplexity.ai/perplexitybot.json
+    user_agent: PerplexityBot
+  - name: perplexity-user
+    operator: Perplexity
+    category: user-fetch
+    docs: https://docs.perplexity.ai/docs/resources/perplexity-crawlers
+    description: "Perplexity-User supports user actions within Perplexity."
+    ips: https://www.perplexity.ai/perplexity-user.json
+    user_agent: Perplexity-User
+  - name: duckassistbot
+    operator: DuckDuckGo
+    category: ai-search
+    docs: https://duckduckgo.com/duckduckgo-help-pages/results/duckassistbot
+    description: "DuckAssistBot is a web crawler for DuckDuckGo Search that crawls pages in real-time for our AI-assisted answers"
+    ips: https://duckduckgo.com/duckassistbot.json
+    user_agent: DuckAssistBot
+    # wba: https://assistbot.duckduckgo.com  (signs; Signature-Agent value not yet confirmed from a request)
+  - name: mistralai-user
+    operator: Mistral
+    category: user-fetch
+    docs: https://docs.mistral.ai/robots
+    description: "MistralAI-User is for user actions in Vibe."
+    ips: https://mistral.ai/mistralai-user-ips.json
+    user_agent: MistralAI-User
+  # Amazon publishes its lists inside HTML pages (the standard JSON document, embedded).
+  - name: amazonbot
+    operator: Amazon
+    category: training
+    docs: https://developer.amazon.com/amazonbot
+    description: "Amazonbot is used to improve our products and services. This helps us provide more accurate information to customers and may be used to train Amazon AI models."
+    ips: https://developer.amazon.com/amazonbot/ip-addresses/
+    user_agent: Amazonbot
+  - name: amzn-searchbot
+    operator: Amazon
+    category: ai-search
+    docs: https://developer.amazon.com/amazonbot
+    description: "Amzn-SearchBot is used to improve search experiences in Amazon products and services."
+    ips: https://developer.amazon.com/amazonbot/searchbot-ip-addresses/
+    user_agent: Amzn-SearchBot
+  - name: amzn-user
+    operator: Amazon
+    category: user-fetch
+    docs: https://developer.amazon.com/amazonbot
+    description: "Amzn-User supports user actions, such as responding to Alexa queries that require up-to-date information."
+    ips: https://developer.amazon.com/amazonbot/live-ip-addresses/
+    user_agent: Amzn-User
+  - name: bedrockbot
+    operator: Amazon Web Services
+    category: ai-search
+    docs: https://docs.aws.amazon.com/bedrock/latest/userguide/webcrawl-data-source-connector.html
+    description: "The Amazon Bedrock provided Web Crawler connects to and crawls URLs you have selected for use in your Amazon Bedrock..."
+    user_agent: bedrockbot # Bedrock Knowledge Bases crawler: a robots.txt token, no IP list: a claim only
+
+  # --- Archives ------------------------------------------------------------------
+  - name: ccbot
+    operator: Common Crawl
+    category: archive
+    docs: https://commoncrawl.org/ccbot
+    description: "...producing and maintaining an open repository of web crawl data that is universally accessible and analyzable by anyone."
+    ips: https://index.commoncrawl.org/ccbot.json
+    user_agent: CCBot
+
+  # --- Agents that sign (Web Bot Auth) ----------------------------------------
+  - name: chatgpt-agent
+    operator: OpenAI
+    category: agent
+    note: "help.openai.com refuses scripted fetches (403): no description recorded."
+    docs: https://help.openai.com/en/articles/11845367-chatgpt-works-cloud-browser-allowlisting
+    wba: https://chatgpt.com
+  - name: google-agent
+    operator: Google
+    category: agent
+    docs:
+      - https://developers.google.com/crawling/docs/crawlers-fetchers/google-user-triggered-fetchers
+      - https://developers.google.com/crawling/docs/crawlers-fetchers/web-bot-auth
+    description: "Google-Agent is used by agents hosted on Google infrastructure to navigate the web and perform actions upon user request."
+    ips: https://developers.google.com/static/crawling/ipranges/user-triggered-agents.json
+    user_agent: Google-Agent
+    note: "Signs a subset of requests as https://agent.bot.goog (experimental, per Google), but its JWK kids and request keyids are labels, not the thumbprints draft -00 5.5 and 5.2 require (MUST), so key sync keeps none of its keys. Its alg EdDSA is accepted since 2026-10-09."
+    # wba: https://agent.bot.goog  (disabled: see note)
+  - name: cloudflare-browser-run
+    operator: Cloudflare
+    category: agent
+    docs: https://developers.cloudflare.com/browser-run/reference/automatic-request-headers/
+    description: "Cloudflare automatically attaches headers to every request made through Browser Run."
+    wba: https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev
+  # Hosted agents that sign, whose directories validate but whose Signature-Agent
+  # value (the identifier they send) is not yet confirmed from a signed request.
+  # List one only once a signed request from it shows that value in its
+  # Signature-Agent header; an entry
+  # under the wrong identifier never verifies anything. Cloudflare Radar lists
+  # the directory each registered.
+  # - name: agentcore-browser  # AWS Bedrock AgentCore Browser; one key per Region
+  #   wba: https://xhah6q48pbxb4.keydirectory.signer.us-east-1.on.aws
+  # - name: browserbase        # apex 301s to www; opt-in signing (beta)
+  #   wba: https://www.browserbase.com
+  # - name: kernel-agent
+  #   wba: https://www.kernel.sh
+  # - name: kernel-search
+  #   wba: https://search.bot.kernel.sh
+  #   user_agent: KernelSearchBot
+  # - name: exasearchbot      # Exa's docs page answered 404; directory found through Cloudflare Radar
+  #   wba: https://crawler.exa.ai
+
+  # --- Local agents: claim only ------------------------------------------------
+  # These run on the user's own machine and send from the user's IP: no list,
+  # no signature, so the User-Agent is all there is. Label them; never trust them.
+  # Tokens from each tool's own source.
+  - name: gemini-cli
+    operator: Google
+    category: local-agent
+    docs:
+      - https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/web-fetch.md
+      - https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/tools/web-fetch.ts
+    description: "The `web_fetch` tool allows the Gemini agent to retrieve and process content from specific URLs provided in your prompt."
+    user_agent: Google-Gemini-CLI/
+  - name: aider
+    operator: Aider
+    category: local-agent
+    docs:
+      - https://aider.chat/docs/usage/images-urls.html
+      - https://github.com/Aider-AI/aider/blob/main/aider/scrape.py
+    description: "Aider can scrape the text from URLs and add it to the chat."
+    user_agent: Aider/
+
+  # --- Added 2026-10-09: search --------------------------------------
+  - name: baiduspider
+    operator: "Baidu"
+    category: search
+    docs: https://help.baidu.com/question?prod_id=99&class=0&id=3001
+    description: "We recommend using reverse DNS lookup to verify Baiduspider."
+    rdns: [baidu.com, baidu.jp]
+    user_agent:
+      - Baiduspider
+      - Baiduspider-image
+      - Baiduspider-video
+      - Baiduspider-news
+      - Baiduspider-favo
+  - name: yandexbot
+    operator: "Yandex"
+    category: search
+    note: "YandexAdditional and YandexAdditionalBot are on the same page with no stated purpose: left out."
+    docs: https://yandex.com/support/webmaster/en/robot-workings/check-yandex-robots.html
+    description: "All Yandex robots have names ending in yandex.ru, yandex.net or yandex.com."
+    rdns: [yandex.ru, yandex.net, yandex.com]
+    user_agent: YandexBot
+  - name: naver-yeti
+    operator: "Naver"
+    category: search
+    docs: https://searchadvisor.naver.com/guide/seo-basic-robots
+    user_agent: Yeti
+  - name: seznambot
+    operator: "Seznam.cz"
+    category: search
+    docs: https://o-seznam.cz/napoveda/vyhledavani/en/seznambot-crawler/
+    description: "a robot (also known as web crawler or web spider) – a program that retrieves content for our search engine"
+    ips: https://search.seznam.cz/ipranges/seznambot.json
+    rdns: [seznam.cz]
+    user_agent: SeznamBot
+  - name: mojeekbot
+    operator: "Mojeek"
+    category: search
+    docs: https://www.mojeek.com/bot.html
+    description: "MojeekBot is the web crawler for the Mojeek search engine."
+    ips: https://www.mojeek.com/mojeekbot.json
+    rdns: [mojeek.com]
+    user_agent: MojeekBot
+  - name: kagibot
+    operator: "Kagi"
+    category: search
+    note: "Kagi lists its four addresses in its HTML page only, not as a list file."
+    docs: https://kagi.com/bot
+    description: "Kagibot is the web crawler for the Kagi search engine."
+    rdns: [kagibot.org]
+    user_agent: Kagibot
+
+  # --- Added 2026-10-09: ai-search -----------------------------------
+  - name: meta-webindexer
+    operator: "Meta"
+    category: ai-search
+    docs: https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers
+    description: "...navigates the web to improve Meta AI search result quality for users."
+    user_agent: meta-webindexer
+  - name: mistralai-index
+    operator: "Mistral"
+    category: ai-search
+    docs: https://docs.mistral.ai/robots
+    description: "MistralAI-Index is for automated crawling of the web for indexing purposes only."
+    ips: https://mistral.ai/mistralai-index-ips.json
+    user_agent: MistralAI-Index
+
+  # --- Added 2026-10-09: training ------------------------------------
+  - name: meta-externalagent
+    operator: "Meta"
+    category: training
+    docs: https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers
+    description: "...crawls the web for use cases such as training foundation AI models or improving products by indexing content directly."
+    user_agent: meta-externalagent
+  - name: ai2bot
+    operator: "Allen Institute for AI"
+    category: training
+    docs: https://allenai.org/crawler
+    description: "The AI2 Bot explores certain domains to find web content. This web content is used to train open language models."
+    user_agent: AI2Bot
+
+  # --- Added 2026-10-09: user-fetch ----------------------------------
+  - name: meta-externalfetcher
+    operator: "Meta"
+    category: user-fetch
+    docs: https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers
+    description: "...fetches individual links at a user's request..."
+    note: "Meta says this fetcher may bypass robots.txt rules, as user-triggered fetchers do."
+    user_agent: meta-externalfetcher
+  - name: google-user-triggered-fetchers
+    operator: "Google"
+    category: user-fetch
+    note: "Google's second list, user-triggered-fetchers.json, resolves to gae.googleusercontent.com: shared Google Cloud customer hosting, so it is left out."
+    docs: https://developers.google.com/crawling/docs/crawlers-fetchers/google-user-triggered-fetchers
+    description: "User-triggered fetchers are initiated by users to perform a fetching function within a Google product."
+    ips: https://developers.google.com/static/crawling/ipranges/user-triggered-fetchers-google.json
+    rdns: [google.com]
+    user_agent:
+      - Google-Read-Aloud
+      - FeedFetcher-Google
+      - Google-CWS
+      - Google-GeminiNotebook
+      - GoogleMessages
+      - Google-Pinpoint
+      - GoogleProducer
+      - Google-Site-Verification
+
+  # --- Added 2026-10-09: site-service --------------------------------
+  - name: google-special-crawlers
+    operator: "Google"
+    category: site-service
+    docs: https://developers.google.com/crawling/docs/crawlers-fetchers/google-special-case-crawlers
+    description: "The special-case crawlers are used by specific Google products where there's an agreement between the crawled site and..."
+    ips: https://developers.google.com/static/crawling/ipranges/special-crawlers.json
+    rdns: [google.com]
+    user_agent:
+      - AdsBot-Google
+      - AdsBot-Google-Mobile
+      - APIs-Google
+      - Google-Safety
+
+  # --- Added 2026-10-09: archive -------------------------------------
+  - name: archive-org-bot
+    operator: "Internet Archive"
+    category: archive
+    docs: https://archive.org/details/archive.org_bot
+    description: "The Internet Archive is a nonprofit digital library that preserves web data and makes it available for research purposes"
+    note: "The item page is rendered by script; the quote is the item's own description (https://archive.org/metadata/archive.org_bot)."
+    user_agent:
+      - archive.org_bot
+      - special_archiver
+  - name: arquivo-web-crawler
+    operator: "Arquivo.pt (Portuguese Web Archive)"
+    category: archive
+    docs: https://sobre.arquivo.pt/en/help/crawling-and-archiving-web-content/
+    description: "Webmasters may detect their servers have been crawled by checking the logs for requests identified by the following user agents"
+    user_agent: Arquivo-web-crawler
+
+  # --- Added 2026-10-09: research ------------------------------------
+  - name: icc-crawler
+    operator: "NICT (Universal Communication Research Institute, Japan)"
+    category: research
+    note: "NICT lists its two addresses in its HTML page only, not as a list file."
+    docs: https://ucri.nict.go.jp/en/icccrawler.html
+    description: "a program called a \"crawler\" that automatically crawls the Internet and collects web pages."
+    user_agent: ICC-Crawler
+  - name: tno-thesis-crawler
+    operator: "TNO (Netherlands)"
+    category: research
+    docs: https://diamonds.tno.nl/bot-policy
+    description: "automatically collects publicly available university master's theses and related academic documents for research purposes"
+    user_agent: TNOThesisCrawler
+    # wba: https://diamonds.tno.nl  (signs; Signature-Agent value not yet confirmed from a request)
+  - name: scientificadvisorbot
+    operator: "Scientific Advisor"
+    category: dataset
+    note: "A commercial catalogue, not academic research: its page says it fetches article pages \"to read corresponding-author emails already shown on the public article page\"."
+    docs: https://scientific-advisor.com/bot
+    description: "Scientific Advisor helps researchers share and compare real publishing experiences with journals and publishers."
+    rdns: [origin.scientific-advisor.com]
+    user_agent: ScientificAdvisorBot
+    # wba: https://scientific-advisor.com  (its page links this directory; Signature-Agent value not yet confirmed from a request)
+
+  # --- Added 2026-10-09: security-scanner ----------------------------
+  - name: censysinspect
+    operator: "Censys"
+    category: security-scanner
+    note: "Censys lists its scanner ranges in its HTML page only, not as a list file."
+    docs: https://docs.censys.com/docs/opt-out-of-data-collection
+    description: "Censys scans help the scientific community accurately study the Internet."
+    user_agent: CensysInspect
+
+  # --- Added 2026-10-09: dataset -------------------------------------
+  - name: webzio
+    operator: "Webz.io"
+    category: dataset
+    docs: https://webz.io/blog/company/from-omgilibot-to-the-webzbot-duo-a-powerful-leap-for-ethical-and-comprehensive-data-collection/
+    description: "Webzio-extended then goes a step further by tagging the data as usable or not usable for AI/ML training"
+    user_agent:
+      - Webzio
+      - Webzio-Extended
+  - name: imagesiftbot
+    operator: "Hive (Imagesift)"
+    category: dataset
+    docs: https://imagesift.com/about
+    description: "a web crawler that scrapes the internet for publicly available images to support our suite of web intelligence products"
+    user_agent: ImagesiftBot
+
+  # --- Added 2026-10-09: seo -----------------------------------------
+  - name: ahrefsbot
+    operator: "Ahrefs"
+    category: seo
+    docs: https://ahrefs.com/robot
+    description: "Powers the database for both Ahrefs, a marketing intelligence platform, and Yep"
+    ips:
+      - https://api.ahrefs.com/v3/public/crawler-ip-ranges
+      - https://api.ahrefs.com/v3/public/crawler-ips
+    rdns: [ahrefs.com, ahrefs.net]
+    user_agent:
+      - AhrefsBot
+      - AhrefsSiteAudit
+    # wba: https://ahrefs.com  (signs; Signature-Agent value not yet confirmed from a request)
+  - name: semrushbot
+    operator: "Semrush"
+    category: seo
+    docs: https://www.semrush.com/bot/
+    description: "Do not try to block SemrushBot via IP as we do not use any consecutive IP blocks."
+    user_agent: SemrushBot
+  - name: dotbot
+    operator: "Moz"
+    category: seo
+    note: "Rogerbot is Moz's separate site-audit crawler."
+    docs: https://moz.com/help/moz-procedures/crawlers/dotbot
+    description: "Dotbot is Moz's web crawler, it gathers web data for the Moz Link Index."
+    user_agent: DotBot
+  - name: builtwith
+    operator: "BuiltWith"
+    category: seo
+    docs: https://builtwith.com/biup
+    user_agent: BuiltWith
+    # wba: https://builtwith.com  (signs; Signature-Agent value not yet confirmed from a request)
+
+  # --- Added 2026-10-09: monitoring ----------------------------------
+  - name: uptimerobot
+    operator: "UptimeRobot"
+    category: monitoring
+    docs: https://uptimerobot.com/help/locations/
+    description: "Download all IPs for allow-listing in .txt, JSON..."
+    ips:
+      - https://uptimerobot.com/inc/files/ips/IPv4andIPv6.txt
+      - https://api.uptimerobot.com/meta/ips
+    user_agent: UptimeRobot
+  - name: pingdom
+    operator: "Pingdom (SolarWinds)"
+    category: monitoring
+    docs: https://documentation.solarwinds.com/en/success_center/pingdom/content/topics/pingdom-probe-servers-ip-addresses.htm
+    description: "The following links provide the probe servers' IP addresses in various formats"
+    ips:
+      - https://my.pingdom.com/probes/ipv4
+      - https://my.pingdom.com/probes/ipv6
+  - name: betterstack
+    operator: "Better Stack"
+    category: monitoring
+    docs: https://betterstack.com/docs/uptime/frequently-asked-questions/
+    description: "Prefer to use User-Agent over IP address allowlisting"
+    ips:
+      - https://incidents.betterstack.com/ips.txt
+      - https://incidents.betterstack.com/ips-by-cluster.json
+    user_agent: "Better Stack Better Uptime Bot"
+  - name: datadog-synthetics
+    operator: "Datadog"
+    category: monitoring
+    docs: https://docs.datadoghq.com/api/latest/ip-ranges/
+    ips: https://ip-ranges.datadoghq.com/synthetics.json
+
+  # --- Added 2026-10-09: social-preview ------------------------------
+  - name: facebookexternalhit
+    operator: "Meta"
+    category: social-preview
+    docs: https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers
+    description: "...crawl the content of an app or website that was shared on one of Meta's family of apps..."
+    user_agent: facebookexternalhit
+  - name: pinterestbot
+    operator: "Pinterest"
+    category: social-preview
+    docs: https://help.pinterest.com/en/business/article/pinterestbot
+    description: "Do not hard code these IP addresses in your site configuration, because the addresses that Pinterestbot uses can change without notice."
+    user_agent:
+      - Pinterestbot
+      - Pinterest
+  - name: slackbot
+    operator: "Slack"
+    category: social-preview
+    docs: https://api.slack.com/robots
+    description: "Each robot we use identifies itself uniquely through its user agent."
+    user_agent:
+      - Slackbot
+      - Slackbot-LinkExpanding
+
+  # --- Added 2026-10-09: the large operators' other bots ------------
+  - name: googleother
+    operator: Google
+    category: research
+    docs: https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers
+    description: "GoogleOther is the generic crawler that may be used by various product teams for fetching publicly accessible content from sites."
+    ips: https://developers.google.com/static/crawling/ipranges/common-crawlers.json
+    rdns: [googlebot.com]
+    user_agent: [GoogleOther, GoogleOther-Image, GoogleOther-Video]
+  - name: google-cloudvertexbot
+    operator: Google
+    category: site-service
+    docs: https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers
+    description: "...affect crawls requested by the site owners' for building Vertex AI Agents."
+    ips: https://developers.google.com/static/crawling/ipranges/common-crawlers.json
+    rdns: [googlebot.com]
+    user_agent: Google-CloudVertexBot
+  - name: mediapartners-google
+    operator: Google
+    category: advertising
+    docs: https://developers.google.com/crawling/docs/crawlers-fetchers/google-special-case-crawlers
+    description: "The Mediapartners-Google crawler visits participating sites in order to provide them with relevant ads."
+    ips: https://developers.google.com/static/crawling/ipranges/special-crawlers.json
+    rdns: [google.com]
+    user_agent: Mediapartners-Google
+  - name: oai-adsbot
+    operator: OpenAI
+    category: advertising
+    docs: https://developers.openai.com/api/docs/bots
+    description: "OAI-AdsBot is used to validate the safety of web pages submitted as ads on ChatGPT."
+    ips: https://openai.com/adsbot.json
+    user_agent: OAI-AdsBot
+  - name: meta-externalads
+    operator: Meta
+    category: advertising
+    docs: https://developers.facebook.com/documentation/sharing/webmasters/web-crawlers
+    description: "...crawls the web for use cases such as improving advertising and other business-related products and services."
+    user_agent: meta-externalads
+  - name: whatsapp-link-preview
+    operator: Meta
+    category: social-preview
+    docs: https://developers.facebook.com/documentation/business-messaging/whatsapp/link-previews/
+    description: "WhatsApp crawls the web page via an HTTP GET request."
+    user_agent: WhatsApp/
+  - name: itms
+    operator: Apple
+    category: site-service
+    docs: https://support.apple.com/en-us/119829
+    description: "The iTMS user agent only crawls URLs associated with registered content on Apple Podcasts."
+    ips: https://search.developer.apple.com/applebot.json
+    rdns: [applebot.apple.com]
+    user_agent: iTMS
+  - name: amazonadbot
+    operator: Amazon Ads
+    category: advertising
+    docs: https://adbot.amazon.com/
+    description: "Amazon Ads uses AmazonAdBot to maintain a brand-safe environment for advertisers and deliver more relevant ads to users."
+    ips: https://adbot.amazon.com/ip-addresses/
+    rdns: [amazonadbot.com]
+    user_agent: AmazonAdBot
+  - name: amazon-kendra
+    operator: Amazon Web Services
+    category: search
+    note: "Crawls the sites an AWS customer chooses, into that customer's own search index."
+    docs: https://docs.aws.amazon.com/kendra/latest/dg/stop-web-crawler.html
+    description: "Amazon Kendra Web Crawler respects standard robots.txt directives like Allow and Disallow."
+    user_agent: amazon-kendra
+  - name: amazon-qbusiness
+    operator: Amazon Web Services
+    category: ai-search
+    note: "Crawls the sites an AWS customer chooses, for that customer's AI assistant. Amazon Q Business is closed to new customers; existing ones keep it."
+    docs: https://docs.aws.amazon.com/amazonq/latest/qbusiness-ug/stop-web-crawler.html
+    description: "Amazon Q Business Web Crawler respects standard robots.txt directives like Allow and Disallow."
+    user_agent: amazon-QBusiness
+  - name: amazon-quick
+    operator: Amazon Web Services
+    category: ai-search
+    note: "Crawls the sites an AWS customer chooses, for that customer's AI assistant."
+    docs: https://docs.aws.amazon.com/quick/latest/userguide/web-crawler-integration.html
+    description: "Web Crawler respects the robots.txt protocol and honors user-agent and allow or disallow directives."
+    user_agent: amazon-Quick-on-behalf-of-
+  - name: aws-security-agent
+    operator: Amazon Web Services
+    category: security-scanner
+    note: "A penetration test an AWS customer runs against its own site; the customer may change the User-Agent."
+    docs: https://docs.aws.amazon.com/securityagent/latest/userguide/perform-penetration-test.html
+    description: "By default, AWS Security Agent adds a custom header for User-Agent set to securityagent"
+    user_agent: securityagent
+  - name: adidxbot
+    operator: Microsoft
+    category: advertising
+    note: "Bing documents its IP list and reverse DNS for Bingbot only, so this entry has neither."
+    docs: https://www.bing.com/webmasters/help/which-crawlers-does-bing-use-8c184ec0
+    description: "AdIdxBot crawls ads and follows the websites from those ads for quality control."
+    user_agent: adidxbot
+  - name: bingpreview
+    operator: Microsoft
+    category: search
+    docs: https://www.bing.com/webmasters/help/which-crawlers-does-bing-use-8c184ec0
+    description: "BingPreview generates page snapshots for Bing."
+    user_agent: BingPreview
+  - name: microsoftpreview
+    operator: Microsoft
+    category: search
+    docs: https://www.bing.com/webmasters/help/which-crawlers-does-bing-use-8c184ec0
+    description: "MicrosoftPreview generates page snapshots for Microsoft products."
+    user_agent: MicrosoftPreview
+  - name: bingvideopreview
+    operator: Microsoft
+    category: search
+    docs: https://www.bing.com/webmasters/help/which-crawlers-does-bing-use-8c184ec0
+    description: "BingVideoPreview is a crawler used by Microsoft to provide previews of videos only in Bing."
+    user_agent: BingVideoPreview
