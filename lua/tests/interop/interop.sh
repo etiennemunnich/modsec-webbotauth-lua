@@ -94,8 +94,16 @@ if [ -z "${TARGET:-}" ]; then
   fi
   echo "== sign (key store written by wba-keysync's own code)"
   bun "$HERE/interop.ts" prepare
+  # The site's own names, as an operator sets them: the Host values the cases
+  # send (127.0.0.1:TLS_PORT, and 127.0.0.1 alone for Stytch's recipe, which
+  # drops the port). Without them no signed request verifies
+  # (unverified/no-site-names). Same path and id as live/run.sh's test config.
+  printf '%s\n' "SecAction \"id:9534914,phase:1,pass,nolog,t:none,setvar:'tx.wba_site_names=127.0.0.1 127.0.0.1:$TLS_PORT'\"" \
+    > "$OUT/wba-test-site-config.conf"
   $DOCKER run -d --name "$NAME" -p "$TLS_PORT:8443" -e BACKEND=http://127.0.0.1:9 \
-    -v "$OUT/keys:/etc/modsecurity.d/wba/keys:ro" "$IMAGE" >/dev/null
+    -v "$OUT/keys:/etc/modsecurity.d/wba/keys:ro" \
+    -v "$OUT/wba-test-site-config.conf:/etc/modsecurity.d/owasp-crs/plugins/wba-test-site-config.conf:ro" \
+    "$IMAGE" >/dev/null
   for _ in $(seq 1 30); do
     [ "$(curl -sk -o /dev/null -w '%{http_code}' --max-time 2 "https://127.0.0.1:$TLS_PORT/" || true)" != "000" ] && break
     sleep 1

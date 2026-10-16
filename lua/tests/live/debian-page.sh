@@ -23,7 +23,8 @@
 # so the test bot's private key (~/wba-test) never lands in your own home.
 #
 # Before sourcing, set NAME (the container's name); optionally HTTP_PORT and
-# HTTPS_PORT, and RUN_OPTS (an array of extra options for "run").
+# HTTPS_PORT, RUN_OPTS (an array of extra options for "run"), and
+# EXPECTED_PASSES (finish fails unless exactly that many checks passed).
 # KEEP=1 leaves the container running at the end, to look around in it.
 # Then: run_page (the server and machine blocks), run_blocks optional|lb,
 # out_of TEXT, machine COMMAND, server COMMAND, check, has, pass, fail, and
@@ -176,9 +177,13 @@ out_of() {
   echo "$WORK/out/$(basename "$f" .sh).txt"
 }
 
-# finish SUCCESS-LINE FAILURE-LINE: the totals; exits non-zero if any check failed.
+# finish SUCCESS-LINE FAILURE-LINE: the totals; exits non-zero if any check
+# failed, or if EXPECTED_PASSES is set and a different number passed.
 finish() {
   DONE=1
+  if [ -n "${EXPECTED_PASSES:-}" ] && [ "$PASSED" != "$EXPECTED_PASSES" ]; then
+    fail "$PASSED checks passed, EXPECTED_PASSES is $EXPECTED_PASSES: a check was skipped, lost or added"
+  fi
   echo "== $PASSED passed, $FAILED failed, in $(( $(date +%s) - START )) s"
   [ "$FAILED" = 0 ] && echo "== $1" || { echo "== $2"; exit 1; }
 }

@@ -3,7 +3,7 @@ wba_log.lua: the SecRuleScript of wba.conf rule 7 (phase 5). Appends
 one JSON line per signed request to CONFIG.path:
 
   {"event":"web-bot-auth","time":1790922501,"unique_id":"...","client_ip":"...",
-   "method":"GET","uri":"/x","status":"verified","reason":"","agent":"https://...",
+   "method":"GET","uri":"/x","host":"example.com","status":"verified","reason":"","agent":"https://...",
    "agent_proof":"valid","keyid":"...","label":"sig1","created":1790922496,
    "expires":1790923101,"granted":false,"sighash":"<64 hex>","uses":1,
    "nonce_uses":null,"covered":"@authority signature-agent"}
@@ -21,13 +21,19 @@ whatever those settings.
 What it holds: the plugin's own outcome, values from a verified signature
 (null unless verified; uses and nonce_uses also null without replay
 accounting, or without a nonce), and the request's time, unique_id, client address,
-method and raw URI (as the access log has them). Never the signature: sighash
+method and raw URI (as the access log has them), and its Host header. The
+host names the site: with a full URL in the request line, nginx gives
+ModSecurity only the path ("uri":"/"), and only the Host header names a site
+(the one the signature was checked against; nginx serves the request-line
+host, which ModSecurity never sees). Never the signature: sighash
 identifies it. Values are read by fixed name only (m.getvar never sees a
-name built from the request) and JSON-escaped; bytes outside printable ASCII
-are written as \u00XX, so a line is always valid JSON and always one line.
-Each field is capped after escaping (the URI at 1024 bytes, the agent at
-512), so a line stays under 4096 bytes: one write() of that size to a pipe
-is never interleaved with another worker's.
+name built from the request; REQUEST_HEADERS:Host is a literal key) and
+JSON-escaped; bytes outside printable ASCII are written as \u00XX, so a line
+is always valid JSON and always one line. Each field is capped after
+escaping (the URI at 1024 bytes, the agent at 512, the host at 256; the
+plugin's own status and reason at 32 and 64), so a line stays under 4096
+bytes: one write() of that size to a pipe is never interleaved with another
+worker's.
 
 Configuration: CONFIG below. "/dev/stdout" is the container's log in the
 official image (nginx workers inherit it); for nginx run as a daemon, set a
@@ -87,8 +93,9 @@ function main()
             ',"client_ip":', str(get("REMOTE_ADDR")),
             ',"method":', str(get("REQUEST_METHOD"), 32),
             ',"uri":', str(get("REQUEST_URI_RAW"), 1024),
-            ',"status":', str(status),
-            ',"reason":', str(get("TX.wba_reason")),
+            ',"host":', str(get("REQUEST_HEADERS:Host")), -- after uri: the live patterns over the leading fields rely on the order
+            ',"status":', str(status, 32), -- the plugin's own words, at most 28 characters
+            ',"reason":', str(get("TX.wba_reason"), 64),
             ',"agent":', verified_str(m.getvar("TX.wba_agent"), 512), -- a jwks_uri / cimd identifier has a path
             ',"agent_proof":', verified_str(m.getvar("TX.wba_agent_proof"), 16),
             ',"keyid":', verified_str(m.getvar("TX.wba_keyid")),

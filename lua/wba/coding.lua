@@ -40,7 +40,7 @@ hashed for FHCRC costs its length. So a flood of empty blocks, or a huge
 header, is bounded like a flood of output. Every symbol decodes with at most
 two table lookups whatever code lengths the sender picks (zlib's two-level
 tables), so no code makes a byte cost more than the measured worst case
-(TESTING.md, Content codings). digest.lua sets the budget from
+(TESTING.md, Cost of a hostile request). digest.lua sets the budget from
 max_decoded_body and max_decode_ratio.
 
 Errors are raised as { coding = "corrupt" | "limit" | "unsupported", why }
@@ -52,7 +52,7 @@ local M = {}
 local byte, char, concat, unpack = string.byte, string.char, table.concat, table.unpack
 
 -- What a deflate block costs beyond its output, in units of one decoded byte
--- (TESTING.md, Content codings): an empty stored or fixed block costs at most
+-- (TESTING.md, Cost of a hostile request): an empty stored or fixed block costs at most
 -- 3, so 16; a dynamic block's header and tables at most 892, so 1024.
 M.BLOCK_COST, M.DYNAMIC_BLOCK_COST = 16, 1024
 

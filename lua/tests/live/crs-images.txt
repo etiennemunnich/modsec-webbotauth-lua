@@ -1,8 +1,8 @@
 # owasp/modsecurity-crs nginx images for matrix.sh, one tag per line.
 # Selection (Docker Hub tag list, 2026-09-30): every CRS release whose first
 # nginx image was pushed on or after 2025-09-30, at that release's latest image
-# build that publishes linux/arm64 and linux/amd64 images; plus the two current
-# -lts images. 202607030707 (3.3.9, 4.25.0) published only a 386 image, so
+# build that publishes linux/arm64 and linux/amd64 images; plus the -lts images
+# of the same builds. 202607030707 (3.3.9, 4.25.0) published only a 386 image, so
 # those two releases use 202606290906. Refresh by re-applying the rule.
 # 2026-10-01: the 202609301109 builds (ModSecurity v3.0.17) added; the
 # 202609241109 builds (v3.0.16) kept, so both engine versions stay covered.

@@ -83,9 +83,9 @@ function H.cleanup()
     tmpdir = nil
 end
 
--- A failing check raises an error, so H.done never runs (every killed mutant
--- is such a run). The interpreter still closes its state on the way out, and
--- that runs this finalizer. Kept in H, so it lives as long as the state.
+-- A failing check raises an error, so H.done never runs (every planted bug
+-- caught is such a run). The interpreter still closes its state on the way
+-- out, and that runs this finalizer. Kept in H, so it lives as long as the state.
 H._reaper = setmetatable({}, { __gc = function() H.cleanup() end })
 
 function H.done(name)

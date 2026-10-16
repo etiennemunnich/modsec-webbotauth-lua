@@ -3,7 +3,7 @@
 #   finch build -f lua/wba/Dockerfile -t crs-wba .
 # Run with the key-store DIRECTORY mounted (not the file: wba-keysync replaces
 # the file by atomic rename, which a single-file bind mount would not see).
-# Publish 8443: the guard refuses signed requests over plain HTTP (8080).
+# Publish 8443 (HTTPS); 8080 serves plain HTTP.
 #   finch run -v "$PWD/wba-demo/keys:/etc/modsecurity.d/wba/keys:ro" -p 8443:8443 \
 #       -e BACKEND=http://your-app:8080 crs-wba
 # README.md, Quick start, runs this end to end with a test bot.
@@ -64,19 +64,16 @@ COPY lua/wba/coding.lua lua/wba/replay.lua /etc/modsecurity.d/wba/lua/wba/
 COPY lua/wba/wba_log.lua /etc/modsecurity.d/wba/lua/wba_log.lua
 COPY lua/wba/web-bot-auth-config.conf /etc/modsecurity.d/owasp-crs/plugins/web-bot-auth-config.conf
 COPY lua/wba/wba.conf /etc/modsecurity.d/owasp-crs/plugins/web-bot-auth-before.conf
-# nginx guard: refuse signed requests whose target is not origin-form (see the file's comment).
-# location_common is included in every server block of this image.
-COPY lua/wba/nginx/web-bot-auth-guard.conf /etc/nginx/conf.d/web-bot-auth-guard.conf
-COPY lua/wba/nginx/web-bot-auth-guard-server.conf /tmp/wba-guard-server.conf
 # Accept-Signature (draft 5.3): recipes.conf's 460 and 461 become 403 and 429
 # asking for a signature. Inert unless a rule denies with one of them.
+# location_common is included in every server block of this image.
 COPY lua/wba/nginx/web-bot-auth-accept-signature.conf /tmp/wba-accept-signature.conf
 # /var/lib/wba/replay: replay accounting's directory (web-bot-auth-config.conf),
 # writable by the nginx workers (uid 101). Mount a filesystem of its own there,
 # writable by uid 101 (a root-owned bind mount is not, and fails closed), so
 # filling it cannot fill anything else; sweep it with wba-keysync/sweep.ts.
-RUN cat /tmp/wba-guard-server.conf /tmp/wba-accept-signature.conf >> /etc/nginx/templates/includes/location_common.conf.template \
- && rm /tmp/wba-guard-server.conf /tmp/wba-accept-signature.conf \
+RUN cat /tmp/wba-accept-signature.conf >> /etc/nginx/templates/includes/location_common.conf.template \
+ && rm /tmp/wba-accept-signature.conf \
  && mkdir -p /etc/modsecurity.d/wba/keys /var/lib/wba/replay \
  && chown nginx:nginx /var/lib/wba/replay \
  && chmod 0700 /var/lib/wba/replay

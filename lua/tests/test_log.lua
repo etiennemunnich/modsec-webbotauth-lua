@@ -9,7 +9,10 @@ local json = require("json")
 
 local SCRIPT = H.here .. "../wba/wba_log.lua"
 local LOG = H.tmp("wba.log")
-local FIXED = { UNIQUE_ID = true, REMOTE_ADDR = true, REQUEST_METHOD = true, REQUEST_URI_RAW = true }
+-- REQUEST_HEADERS:Host is a fixed name too: an anchored collection with a
+-- literal key, which libmodsecurity resolves (stringMatchResolve).
+local FIXED = { UNIQUE_ID = true, REMOTE_ADDR = true, REQUEST_METHOD = true, REQUEST_URI_RAW = true,
+                ["REQUEST_HEADERS:Host"] = true }
 for _, k in ipairs({ "status", "reason", "agent", "agent_proof", "keyid", "label", "created", "expires", "granted", "sighash", "uses", "nonce_uses", "covered" }) do
     FIXED["TX.wba_" .. k] = true
 end
@@ -45,6 +48,7 @@ end
 local SIGHASH = ("ab"):rep(32)
 local VERIFIED = {
     UNIQUE_ID = "179092250669.094052", REMOTE_ADDR = "192.0.2.7", REQUEST_METHOD = "GET", REQUEST_URI_RAW = "/x?y=1",
+    ["REQUEST_HEADERS:Host"] = "example.com",
     ["TX.wba_status"] = "verified", ["TX.wba_reason"] = "",
     ["TX.wba_agent"] = H.AGENT_ID, ["TX.wba_agent_proof"] = "valid", ["TX.wba_keyid"] = ("k"):rep(43), ["TX.wba_label"] = "sig1",
     ["TX.wba_created"] = "1790922496", ["TX.wba_expires"] = "1790923101", ["TX.wba_granted"] = "1",
@@ -73,6 +77,12 @@ H.eq(line.unique_id, "179092250669.094052")
 H.eq(line.client_ip, "192.0.2.7")
 H.eq(line.method, "GET")
 H.eq(line.uri, "/x?y=1")
+-- The Host header names the site in the line: with a full URL in the request
+-- line, "uri" is "/" and names none. Right after "uri", so the live suite's and getting-started's patterns over
+-- the leading fields still hold.
+H.eq(line.host, "example.com")
+H.eq(first:find('"uri":"/x?y=1","host":"example.com","status":"verified"', 1, true) ~= nil, true, "host follows uri")
+H.eq(one_line((run(with({ ["REQUEST_HEADERS:Host"] = false })))).host, "", "no Host header: empty, as uri and method are")
 H.eq(line.status, "verified")
 H.eq(line.reason, "")
 H.eq(line.agent, H.AGENT_ID)
@@ -87,7 +97,7 @@ H.eq(line.uses, 2)
 H.eq(line.nonce_uses, json.null, "no nonce: null")
 H.eq(line.covered, "@authority signature-agent")
 H.eq(one_line((run(with({ ["TX.wba_nonce_uses"] = "3" })))).nonce_uses, 3)
-H.pass("verified: one JSON line with outcome, identity, proof, window, grant, sighash, use counts and covered names")
+H.pass("verified: one JSON line with host, outcome, identity, proof, window, grant, sighash, use counts and covered names")
 
 -- 2. URL-less, and a failure: "n/a" (wba.conf rule 1) becomes null.
 line = one_line((run(with({ ["TX.wba_agent"] = "n/a", ["TX.wba_agent_proof"] = "n/a", ["TX.wba_reason"] = "url-less", ["TX.wba_granted"] = "0" }))))
@@ -115,11 +125,12 @@ H.pass("no line for unsigned requests or an unset status; one for an ignored, un
 
 -- 4. Client-controlled text cannot break the line or the JSON.
 local nasty = '/a"b\\c\nd\re\1f\127g\128h\255i%22'
-local text = run(with({ REQUEST_URI_RAW = nasty, REQUEST_METHOD = 'GET"\n' }))
+local text = run(with({ REQUEST_URI_RAW = nasty, REQUEST_METHOD = 'GET"\n', ["REQUEST_HEADERS:Host"] = nasty }))
 line = one_line(text)
 H.eq(text:find("[\128-\255]") == nil, true, "no raw byte above 127 in the line")
 H.eq(text:find("\\u0080", 1, true) ~= nil and text:find("\\u00ff", 1, true) ~= nil, true, "high bytes as \\u00XX")
 H.eq(line.uri:sub(1, 14), nasty:sub(1, 14), "quote, backslash, LF, CR, controls and DEL round-trip")
+H.eq(line.host:sub(1, 14), nasty:sub(1, 14), "the Host header is escaped like the URI")
 H.eq(line.method, 'GET"\n')
 local long = run(with({ REQUEST_URI_RAW = "/" .. ("x"):rep(9000) }))
 H.eq(#one_line(long).uri, 1024, "URI cut to 1024 bytes")
@@ -132,12 +143,15 @@ H.eq(one_line((run(with({ ["TX.wba_created"] = ("9"):rep(16) })))).created, json
 -- "granted":false. A filler that escapes to several bytes stops short of a
 -- cap, and an integer too long is written as null, so either would measure
 -- a shorter line than a real request can cause.
+-- status and reason are the plugin's own words (at most 28 characters), so
+-- their caps are small and leave room for the Host header's 256.
 local CAPS = {
-    UNIQUE_ID = 256, REMOTE_ADDR = 256, REQUEST_METHOD = 32, REQUEST_URI_RAW = 1024,
-    ["TX.wba_status"] = 256, ["TX.wba_reason"] = 256, ["TX.wba_agent"] = 512, ["TX.wba_agent_proof"] = 16,
+    UNIQUE_ID = 256, REMOTE_ADDR = 256, REQUEST_METHOD = 32, REQUEST_URI_RAW = 1024, ["REQUEST_HEADERS:Host"] = 256,
+    ["TX.wba_status"] = 32, ["TX.wba_reason"] = 64, ["TX.wba_agent"] = 512, ["TX.wba_agent_proof"] = 16,
     ["TX.wba_keyid"] = 256, ["TX.wba_label"] = 64, ["TX.wba_sighash"] = 256, ["TX.wba_covered"] = 512,
 }
-local FIELD = { UNIQUE_ID = "unique_id", REMOTE_ADDR = "client_ip", REQUEST_METHOD = "method", REQUEST_URI_RAW = "uri" }
+local FIELD = { UNIQUE_ID = "unique_id", REMOTE_ADDR = "client_ip", REQUEST_METHOD = "method", REQUEST_URI_RAW = "uri",
+                ["REQUEST_HEADERS:Host"] = "host" }
 local INTS = { "created", "expires", "uses", "nonce_uses" }
 local worst = { ["TX.wba_granted"] = "0" }
 for k in pairs(CAPS) do worst[k] = ("x"):rep(5000) end

@@ -30,9 +30,9 @@ if [ -z "${SHARD:-}" ] && [ "$JOBS" -gt 1 ]; then
   done
   for p in "${pids[@]}"; do wait "$p" || rc=1; done
   cat "$out"/*
-  echo "== $JOBS shards: $(cat "$out"/* | grep -c '^PASS  killed') killed, $(cat "$out"/* | grep -c '^SKIP') skipped"
+  echo "== $JOBS shards: $(cat "$out"/* | grep -c '^PASS  caught') planted bugs caught, $(cat "$out"/* | grep -c '^SKIP') skipped"
   rm -rf "$out"
-  [ "$rc" = 0 ] && echo "== all mutants killed" || echo "== MUTATION CHECK FAILED"
+  [ "$rc" = 0 ] && echo "== every planted bug caught" || echo "== MUTATION CHECK FAILED"
   exit "$rc"
 fi
 N=0
@@ -54,7 +54,7 @@ run_mutant() {
   elif "$LUA" "$tmp/lua/tests/test_$4.lua" >/dev/null 2>&1; then
     echo "FAIL  survived: $1"; FAIL=1
   else
-    echo "PASS  killed: $1"
+    echo "PASS  caught: $1"
   fi
   rm -rf "$tmp"
 }
@@ -137,14 +137,15 @@ mutant "attributed to the last covered member, not the label's" verify.lua \
 mutant "key store read before the Signature member is checked" verify.lua \
   's/^(\s*)if not sig_member or sig_member\.kind ~= "item"/$1if store() and not sig_member or sig_member.kind ~= "item"/' verify
 
-# RFC 9651 conformance (killed by the HTTP WG corpus).
+# RFC 9651 conformance (caught by the HTTP WG corpus).
 mutant "decimal rounding half-up instead of half-to-even" structured_fields.lua \
   's/or n % 2 == 1\)\)/or true))/' sf_corpus
 mutant "duplicate dictionary key keeps the first value" structured_fields.lua \
   's/^(\s*)map\[key\] = member$/$1if map[key] == nil then map[key] = member end/' sf_corpus
 mutant "display string accepts invalid UTF-8" structured_fields.lua \
   's/if not M\.valid_utf8\(bytes\) then fail/if false then fail/' sf_corpus
-# The UTF-8 guards the corpus never reaches (research note 24, B4: A-C).
+# The UTF-8 guards the HTTP WG corpus never reaches: an overlong E0 form, a
+# code point above U+10FFFF, a later byte that is not a continuation byte.
 mutant "display string: overlong E0 form accepted (E0 80-9F)" structured_fields.lua \
   's/need, lo = 2, 0xA0/need, lo = 2, 0x80/' structured_fields
 mutant "display string: F4 above U+10FFFF accepted (F4 90-BF)" structured_fields.lua \
@@ -152,10 +153,10 @@ mutant "display string: F4 above U+10FFFF accepted (F4 90-BF)" structured_fields
 mutant "display string: a third or fourth byte that is not a continuation byte accepted" structured_fields.lua \
   's/elseif b < 0x80 or b > 0xBF then/elseif false then/' structured_fields
 
-# RFC 9421 components (killed by the RFC examples and the URLSearchParams vectors).
+# RFC 9421 components (caught by the RFC examples and the URLSearchParams vectors).
 mutant "@query-param accepts a repeated name" components.lua \
   's/if not e or e\.count ~= 1 then/if not e then/' components
-mutant "@query-param with a parameter other than name read as name alone (B4: D)" components.lua \
+mutant "@query-param with a parameter other than name read as name alone" components.lua \
   's/^(\s*)other = true$/$1other = false/' components
 mutant "@query-param leaves !()~ unencoded" components.lua \
   's/\[\^A-Za-z0-9\*%-\._\]/[^A-Za-z0-9*%-._!()~]/' components
@@ -168,14 +169,14 @@ mutant "UTF-8 replacement consumes the unexpected byte" components.lua \
 mutant ";sf guesses Dictionary for a field of unknown type" components.lua \
   's/if not ftype then return nil, "unsupported-component" end/ftype = ftype or "dictionary"/' components
 
-# Draft and RFC 9421 outcome rules (killed by the negative vectors and test_verify).
+# Draft and RFC 9421 outcome rules (caught by the negative vectors and test_verify).
 mutant "non-https Signature-Agent treated as ignorable (unverified)" verify.lua \
   's/return nil, "invalid", "agent-not-https"/return nil, "unverified", "bad-agent-url"/' negative_vectors
 mutant "a signature over Content-Digest verifies without the body" digest.lua \
   's/^M\.FIELDS = \{.*$/M.FIELDS = {}/' negative_vectors
 
-# Cost and outcome fixes from the third review (killed by test_verify's
-# two-dimension timing, test_components and the negative vectors).
+# Cost and outcome rules (caught by test_verify's cost budgets for hundreds
+# of components over large fields, test_components and the negative vectors).
 mutant "per-request memo disabled (cost = components x field size)" components.lua \
   's/local m = MEMO\[req\]$/local m = nil/' verify
 mutant "backtracking obs-fold regex" components.lua \
@@ -187,7 +188,7 @@ mutant ";key allowed on a field typed as a List or Item" components.lua \
 mutant "absent Signature-Agent treated as invalid (draft 4.3)" verify.lua \
   's/if agent_field == nil then return URL_LESS end/if agent_field == nil then return nil, "invalid", "agent-not-covered" end/' negative_vectors
 
-# RFC 9530 body digests (killed by test_verify, test_entry and test_sha256).
+# RFC 9530 body digests (caught by test_verify, test_entry and test_sha256).
 mutant "an uncovered digest member is trusted" digest.lua \
   's/and \(members == true or members\[a\]\) and/and/' verify
 mutant "the weakest covered algorithm is checked" digest.lua \
@@ -209,7 +210,7 @@ mutant "each signature hashes the body again" digest.lua \
 mutant "the SHA-256 size cap also applies to SHA-512" digest.lua \
   's/elseif c\.alg == "sha-256" and policy\.max_sha256_body and/elseif policy.max_sha256_body and/' verify
 
-# RFC 9530 3 / RFC 9110 14.4, 14.5: partial content (killed by test_verify).
+# RFC 9530 3 / RFC 9110 14.4, 14.5: partial content (caught by test_verify).
 mutant "Content-Range honoured on every method (14.4: MUST ignore)" digest.lua \
   's/if range == nil or req\.method ~= "PUT" then return false end/if range == nil then return false end/' verify
 mutant "Content-Range ignored on PUT as well" digest.lua \
@@ -219,7 +220,7 @@ mutant "any PUT range taken as the whole representation" digest.lua \
 mutant "a whole-representation range not held to the content length" digest.lua \
   's/if c\.length and #body ~= c\.length then/if false then/' verify
 
-# Unencoded-Digest over coded bodies (killed by test_verify and test_coding).
+# Unencoded-Digest over coded bodies (caught by test_verify and test_coding).
 mutant "x-gzip not taken as gzip (RFC 9110 8.4.1.3)" digest.lua \
   's/if c == "x-gzip" then c = "gzip" end/-- removed/' verify
 mutant "content codings compared case-sensitively" digest.lua \
@@ -311,7 +312,7 @@ mutant "any configured grant grants every verified agent" modsecurity_entry.lua 
   's/if r\.agent and grants\[r\.agent\] and covers_all/if r.agent and next(grants) and covers_all/' entry
 mutant "a grant ignores what the signature covered (bearer token)" modsecurity_entry.lua \
   's/ and covers_all\(r\.covered, grant_needs\) then/ then/' entry
-mutant "the operator's tx.wba_grant_require_components list dropped (any coverage granted; B4: E)" modsecurity_entry.lua \
+mutant "the operator's tx.wba_grant_require_components list dropped (any coverage granted)" modsecurity_entry.lua \
   's/^(\s*)grant_needs\[#grant_needs \+ 1\] = name$/$1-- removed/' entry
 mutant "@target-uri not counted as @path for a grant" modsecurity_entry.lua \
   's/ or \(name == "\@path" and have\["\@target-uri"\]\)//' entry
@@ -464,10 +465,16 @@ mutant "tx.wba_max_window=0 accepted" modsecurity_entry.lua \
   's/window:match\("\^\[1-9\]/window:match("^[0-9]/' entry
 mutant "a nonce not required when the operator asks" verify.lua \
   's/if policy\.require_nonce and not nonce then/if false then/' entry
-mutant "statement counters named without their last second" replay.lua \
-  's/name = \("s\.%d\.%s"\):format\(last, hash\)/name = "s." .. hash/' replay
-mutant "replay counters kept past the maximum age" verify.lua \
-  's/if pol\.max_age and r\.created \+ pol\.max_age < last then/if false then/' verify
+mutant "statement counters named without their expiry" replay.lua \
+  's/name = \("s\.%d\.%s"\):format\(expires, hash\)/name = "s." .. hash/' replay
+mutant "a statement counter named with the request's expiry grace (another server block counts afresh)" verify.lua \
+  's/expires = r\.expires \}/expires = r.expires + (pol.expiry_grace or 0) }/' entry
+mutant "a statement counter named with the request's max_age (another server block counts afresh)" verify.lua \
+  's/expires = r\.expires \}/expires = math.min(r.expires, r.created + (pol.max_age or r.expires)) }/' verify
+mutant "a grant left standing after an internal error (recipe C reads it alone)" modsecurity_entry.lua \
+  's/^(\s*)m\.setvar\("tx\.wba_granted", "0"\)$/$1-- removed/' entry
+mutant "the identity left standing after an internal error" modsecurity_entry.lua \
+  's/for _, name in ipairs\(VERIFIED_ONLY\) do m\.setvar\(name, "n\/a"\) end/-- removed/' entry
 mutant "Signature-Agent parsed again for every signature" components.lua \
   's/if slot\[name\] == nil then/if true then/' verify
 
@@ -480,6 +487,8 @@ mutant "strict field lines ignored for covered digests" digest.lua \
   's/if strict_lines and not sf\.every_line/if false and not sf.every_line/' verify
 mutant "use counts missing from the JSON log line" wba_log.lua \
   's/verified_int\(m\.getvar\("TX\.wba_uses"\)\)/"null"/' log
+mutant "the Host header missing from the JSON log line" wba_log.lua \
+  's/str\(get\("REQUEST_HEADERS:Host"\)\)/"null"/' log
 
 # Key-sync (TypeScript) mutants: wba-keysync and the fixtures it reads, copied
 # and mutated the same way, run under Bun. Without Bun they are reported as
@@ -497,7 +506,7 @@ ts_mutant() { # description, file in wba-keysync/, perl substitution, test file 
   elif (cd "$tmp" && bun test "./wba-keysync/$4.test.ts" ${5:+-t "$5"}) >/dev/null 2>&1; then
     echo "FAIL  survived: $1"; FAIL=1
   else
-    echo "PASS  killed: $1"
+    echo "PASS  caught: $1"
   fi
   rm -rf "$tmp"
 }
@@ -571,7 +580,7 @@ ts_mutant "lists: policy rules log with no severity, which ModSecurity v3 record
 ts_mutant "validate: a User-Agent token that would claim two bots accepted" validate.ts \
   's/const other = owner\.find\(\(\[b, tb\]\) => b !== a && tb\.includes\(ta\)\);/const other = undefined;/' validate
 ts_mutant "robots: bots with other policies asked to stay away too" robots.ts \
-  's/bots\.filter\(\(x\) => x\.policy === "deny"\)/bots.filter((x) => x.policy !== undefined)/' robots
+  's/bots\.filter\(\(x\) => x\?\.policy === "deny"\)/bots.filter((x) => x?.policy !== undefined)/' robots
 ts_mutant "robots: a User-Agent fragment written as a product token" robots.ts \
   's/if \(!PRODUCT\.test\(t\)\) \{ skipped/if (false) { skipped/' robots
 ts_mutant "report: a broken entry still credited with proofs" report.ts \
@@ -591,7 +600,7 @@ ts_mutant "any media type accepted at the well-known URI (draft 5.5.1)" keysync.
 ts_mutant "an agent's own URL not guarded (draft 6.7)" keysync.ts \
   's/^(\s*)await guardUnlessAllowed\(a\.url, resolve, ctx\.allowPrivate, warn\);$/$1\/\/ removed/' keysync
 ts_mutant "the CIMD jwks_uri hop not guarded (draft 6.7)" keysync.ts \
-  's/^(\s*)await guardUnlessAllowed\(jwksUri, resolve, ctx\.allowPrivate, warn\);$/$1\/\/ removed/' keysync
+  's/^(\s*)await guardAddress\(jwksUri, resolve\);$/$1\/\/ removed/' keysync
 ts_mutant "IP literals handed to DNS, never checked as written (draft 6.7)" keysync.ts \
   's/const literal = host\.startsWith\("\["\) \? host\.slice\(1, -1\) : v4\(host\) \? host : null;/const literal = null as string | null;/' keysync
 ts_mutant "SIIT IPv4-translated addresses not judged by their IPv4 address" keysync.ts \
@@ -656,9 +665,11 @@ ts_mutant "SF: a Decimal with four fractional digits accepted (RFC 9651 4.2.4)" 
   's/frac\.length > 3/frac.length > 4/' proof
 ts_mutant "sweeper removes a statement before its signature expires" sweep.ts \
   's/Number\(statement\[1\]\) \+ skew < now/Number(statement[1]) < now + skew/' sweep
+ts_mutant "sweeper keeps a statement unused past the window until its own far-off expires" sweep.ts \
+  's/if \(!expired\) \{ \/\/ a statement not yet expired/if (!expired && !statement) { \/\/ a statement not yet expired/' sweep
 ts_mutant "sweeper treats a symlink as a counter" sweep.ts \
   's/!entry\.isFile\(\) \|\| //' sweep
-ts_mutant "sweeper aborts when another sweeper removed a nonce after readdir" sweep.ts \
+ts_mutant "sweeper aborts when another sweeper removed a counter after readdir" sweep.ts \
   's/=== "ENOENT"\) continue;/=== "ENOENT") throw e;/' sweep
 ts_mutant "sweeper prints usage for a runtime error" sweep.ts \
   's/e instanceof UsageError \? usage/true ? usage/' sweep
@@ -686,6 +697,42 @@ ts_mutant "agents: --only ignored" agents.ts \
   's/if \(only && !only\.has\(bot\.name\)\) continue;//' agents
 ts_mutant "agents: --out written through a symlink" agents.ts \
   's/renameSync\(tmp, out\);/writeFileSync(out, readFileSync(tmp)); rmSync(tmp);/; s/^import \{ readFileSync, renameSync, writeFileSync \}/import { readFileSync, renameSync, rmSync, writeFileSync }/' agents
+
+
+ts_mutant "allow-private: the jwks_uri a CIMD document names excepted too" keysync.ts \
+  's/^(\s*)await guardAddress\(jwksUri, resolve\);$/$1await guardUnlessAllowed(jwksUri, resolve, ctx.allowPrivate, warn);/' keysync
+ts_mutant "key sync: the DNS lookup has no time limit (a silent DNS server holds the run)" keysync.ts \
+  's/const resolve = withDeadline\(opts\.resolve \?\? lookupHost, limits\.timeoutMs\);/const resolve = opts.resolve ?? lookupHost;/' keysync
+ts_mutant "key sync: the DNS deadline timer never cleared, so every run waits it out" keysync.ts \
+  's/^(\s*)clearTimeout\(timer\);$/$1\/\/ kept/' keysync
+ts_mutant "key sync: a body that is not JSON quoted into the error" keysync.ts \
+  's/throw new Error\(`the body \(\$\{body\.length\} bytes\) is not UTF-8 JSON`\);/throw new Error(`not JSON: \${new TextDecoder().decode(body)}`);/' keysync
+ts_mutant "key sync: printable leaves C1 control characters (U+0080-U+009F)" keysync.ts \
+  's/\[\\x00-\\x1f\\x7f-\\x9f\]/[\\x00-\\x1f\\x7f]/' keysync
+ts_mutant "cli: what the network sent printed with its control characters" cli.ts \
+  's/const error = \(l: string\) => \(io\.error \?\? console\.error\)\(printable\(l\)\);/const error = (l: string) => (io.error ?? console.error)(l);/' keysync
+ts_mutant "cli: an agents.txt line that does not parse dropped, so its agent's keys are dropped (exit 2)" cli.ts \
+  's/if \(errors\.length > 0\) \{/if (false) {/' keysync
+ts_mutant "lists: --allow-private-url matched by origin, so one named list excepts every list on its host" lists.ts \
+  's/if \(allow\.has\(new URL\(url\)\.href\)\)/if ([...allow].some((u) => new URL(u).origin === new URL(url).origin))/' lists
+ts_mutant "lists: an origin accepted as --allow-private-url" lists.ts \
+  's/if \(u\.pathname === "\/" && u\.search === ""\) return null;/\/\/ removed/' lists
+ts_mutant "validate: a name that is not a string accepted (YAML name: 360)" validate.ts \
+  's/if \(typeof name !== "string"\) return name === undefined/if (name === undefined) return name === undefined/' validate
+ts_mutant "validate: a bot named tokens accepted, so lists.ts overwrites its IP list with the token file" validate.ts \
+  's/else if \(RESERVED_NAMES\.has\(b\.name\)\)/else if (false)/' validate
+ts_mutant "validate: a wba with a space accepted, so \"URL type=cimd\" changes the agent's type" validate.ts \
+  's/if \(typeof b\.wba === "string" && \/\\s\/\.test\(b\.wba\)\)/if (false)/' validate
+ts_mutant "validate: a nested value serialised whole into a message (YAML aliases nest)" validate.ts \
+  's/return Array\.isArray\(v\) \? "a list" : typeof v === "object" \? "a mapping" : typeof v;/return String(JSON.stringify(v));/' validate
+ts_mutant "validate: a long value written whole into a message" validate.ts \
+  's/return s\.length > 200 \? `\$\{s\.slice\(0, 200\)\}\.\.\."` : s;/return s;/' validate
+ts_mutant "agents: a bot name with a newline written into agents.txt" agents.ts \
+  's/if \(bad\) throw new Error\(`\$\{bad\} \(validate\.ts checks every entry\)`\);/\/\/ removed/' agents
+ts_mutant "agents: a wba with a space handed to the line parser, so its type can change" agents.ts \
+  's/if \(typeof bot\.wba !== "string" \|\| \/\\s\/\.test\(bot\.wba\)\) throw/if (false) throw/' agents
+ts_mutant "robots: a bot name with a newline written into robots.txt" robots.ts \
+  's/if \(bad\) throw new Error\(`\$\{bad\} \(validate\.ts checks every entry\)`\);/\/\/ removed/' robots
 fi
 
 # crypto.lua (lua-openssl): RFC 9421 3.3.1's parameters, 3.3.4/3.3.5's r || s.
@@ -710,4 +757,4 @@ crypto_mutant "the OpenSSL error queue left full after a failed check" crypto.lu
 crypto_mutant "body SHA-512 computed as SHA3-512" crypto.lua \
   's/digest\.digest\("sha512", data, true\)/digest.digest("sha3-512", data, true)/' sha256
 
-[ "$FAIL" = 0 ] && echo "== all mutants killed" || { echo "== MUTATION CHECK FAILED"; exit 1; }
+[ "$FAIL" = 0 ] && echo "== every planted bug caught" || { echo "== MUTATION CHECK FAILED"; exit 1; }

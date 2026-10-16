@@ -1,15 +1,17 @@
 // keysync.test.ts: runs unchanged under `bun test` and `node --test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import {
   DEFAULT_LIMITS, HISTORY_HEADER, MAX_FRESHNESS, MEDIA_TYPE, WELL_KNOWN, allowedOrigin, appendHistory, fetchDirectory, historyLines, forbiddenAddress, format,
-  freshnessLifetime, identifier, keysFromDirectory, parse, parseAgent, sync, thumbprint, urlIdentifier, writeAtomic,
+  freshnessLifetime, identifier, keysFromDirectory, parse, parseAgent, printable, sync, thumbprint, urlIdentifier, withDeadline, writeAtomic,
   type Cache, type FetchLike, type StoreEntry,
 } from "./keysync.ts";
 import { directoryIdentifier } from "./identifier.ts";
+import { main as keysyncMain, readAgents } from "./cli.ts";
 
 const FIXTURE = new URL("../lua/tests/fixtures/wba-keys.tsv", import.meta.url);
 const VECTORS = new URL("../lua/tests/fixtures/identifiers.tsv", import.meta.url);
@@ -780,5 +782,151 @@ test("allowedOrigin: an https origin as agents.txt writes one, normalised; nothi
   assert.equal(allowedOrigin("https://[::1]:8443"), "https://[::1]:8443");
   for (const bad of ["http://localhost:8443", "https://localhost:8443/keys", "https://Bot.Example", "localhost", ""]) {
     assert.equal(allowedOrigin(bad), null, bad);
+  }
+});
+
+// --- Review 2026-10-14: the private-address exception's scope, DNS time limit, output, config errors ---
+
+test("--allow-private-origin covers only the URL an agents.txt line names, never the jwks_uri a CIMD document names", async () => {
+  const PRIV = "https://localhost:8443", CARD = `${PRIV}/card`, HOP = `${PRIV}/jwks.json`, PUB = "https://card.example/card";
+  const resolve = async (h: string) => (h === "localhost" ? ["127.0.0.1"] : ["93.184.215.14"]);
+  const allowPrivate = [allowedOrigin(PRIV)!];
+  const keys = json({ keys: [OKP] }, {}, "application/jwk-set+json");
+  // The excepted origin's own CIMD document is fetched; the jwks_uri it names, on that same origin, is still checked.
+  let urls: string[] = [];
+  let r = await sync([`${CARD} type=cimd`], [], { now: NOW, resolve, allowPrivate,
+    fetchImpl: recFetch({ [CARD]: json({ client_id: CARD, jwks_uri: HOP }), [HOP]: keys }, urls) });
+  assert.deepEqual(urls, [CARD], "the hop was never fetched");
+  assert.match(r.failures[0]?.error ?? "(no failure)", /^localhost resolves to 127\.0\.0\.1, a private, loopback or link-local address/);
+  assert.deepEqual(r.warnings, [`${CARD} type=cimd: ${PRIV} fetched without the private-address check (--allow-private-origin)`]);
+  // A public CIMD whose server points its jwks_uri at the excepted origin: refused, nothing fetched there.
+  urls = [];
+  r = await sync([`${PUB} type=cimd`], [], { now: NOW, resolve, allowPrivate,
+    fetchImpl: recFetch({ [PUB]: json({ client_id: PUB, jwks_uri: HOP }), [HOP]: keys }, urls) });
+  assert.deepEqual(urls, [PUB]);
+  assert.match(r.failures[0]?.error ?? "(no failure)", /127\.0\.0\.1, a private/);
+  assert.deepEqual(r.warnings, [], "no fetch went unchecked");
+  // The same JWK Set, listed in agents.txt itself, is excepted.
+  urls = [];
+  r = await sync([`${HOP} type=jwks_uri`], [], { now: NOW, resolve, allowPrivate, fetchImpl: recFetch({ [HOP]: keys }, urls) });
+  assert.deepEqual([urls, r.failures, r.entries.map((e) => e.identifier)], [[HOP], [], [HOP]]);
+});
+
+test("sync: a DNS lookup that never answers fails within --timeout-ms, as a fetch does, and keeps the last-good keys", async () => {
+  const urls: string[] = [];
+  const held: StoreEntry[] = [{ identifier: ID("a.example"), keyid: KID_KEY, type: "ed25519", publicKeyHex: HEX_KEY }];
+  const t0 = Date.now();
+  const r = await sync(["https://a.example"], held, { now: NOW, limits: { ...DEFAULT_LIMITS, timeoutMs: 50 },
+    resolve: () => new Promise<string[]>(() => {}), fetchImpl: recFetch({}, urls) });
+  assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms`);
+  assert.deepEqual(urls, [], "nothing fetched");
+  assert.equal(r.failures[0]?.error, "DNS lookup of a.example timed out after 50 ms");
+  assert.deepEqual(r.entries, held, "an outage evicts nothing (draft 6.10)");
+  await assert.rejects(withDeadline(() => new Promise<string[]>(() => {}), 20)("h.example"), /^Error: DNS lookup of h\.example timed out after 20 ms$/);
+  assert.deepEqual(await withDeadline(async () => ["192.0.2.1"], 20)("h.example"), ["192.0.2.1"]);
+});
+
+test("withDeadline: the timer is cleared once the lookup answers, so a run exits at once", () => {
+  const dir = mkdtempSync(join(tmpdir(), "wba-deadline-"));
+  try {
+    const probe = join(dir, "probe.mjs");
+    writeFileSync(probe, `const { withDeadline } = await import(${JSON.stringify(new URL("./keysync.ts", import.meta.url).href)});\n`
+      + `console.log((await withDeadline(async () => ["192.0.2.1"], 60000)("a.example")).join());\n`);
+    const t0 = Date.now();
+    const r = spawnSync(process.execPath, [probe], { encoding: "utf8", timeout: 20000 });
+    assert.equal(r.status, 0, r.stderr || "killed: the 60 s timer kept the process alive");
+    assert.equal(r.stdout.trim(), "192.0.2.1");
+    assert.ok(Date.now() - t0 < 15000, `took ${Date.now() - t0} ms`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a body that is not JSON fails with a fixed message, so none of its bytes reach the output (Node quotes up to ten, Bun one)", async () => {
+  const evil = "\u001b[2J\u001b]0;owned\u0007\u009b31m" + "x".repeat(20);
+  const bytes = new TextEncoder().encode(evil).length;
+  for (const [line, url, type] of [["https://a.example", ID("a.example"), MEDIA_TYPE], ["https://b.example/k type=jwks_uri", "https://b.example/k", "application/json"]]) {
+    const r = await sync([line], [], { now: NOW, resolve: publicDns,
+      fetchImpl: fakeFetch({ [url]: () => new Response(evil, { status: 200, headers: { "content-type": type } }) }) });
+    assert.equal(r.failures[0]?.error, `the body (${bytes} bytes) is not UTF-8 JSON`, line);
+  }
+  const r = await sync(["https://b.example/k type=jwks_uri"], [], { now: NOW, resolve: publicDns,
+    fetchImpl: fakeFetch({ "https://b.example/k": () => new Response(new Uint8Array([0x7b, 0xff, 0x7d]), { status: 200 }) }) });
+  assert.equal(r.failures[0]?.error, "the body (3 bytes) is not UTF-8 JSON");
+});
+
+test("printable: every C0 and C1 control character and DEL becomes a space; other text is untouched", () => {
+  assert.equal(printable("a\u001b[31mb\nc\u0007d\u009be\u007ff\u0000g"), "a [31mb c d e f g");
+  assert.equal(printable("café, Ünïcode — and 🙂"), "café, Ünïcode — and 🙂");
+});
+
+/** A temporary directory holding agents.txt, for key sync's command line. */
+function cliDir(agents: string): string {
+  const d = mkdtempSync(join(tmpdir(), "wba-cli-"));
+  writeFileSync(join(d, "agents.txt"), agents);
+  return d;
+}
+
+test("readAgents: agent lines, and each line key sync cannot use by its line number", () => {
+  assert.deepEqual(readAgents("# ours\r\nhttps://a.example\r\n\n  https://b.example/k type=jwks_uri  \nhttps://c.example type=x509\n"), {
+    agents: ["https://a.example", "https://b.example/k type=jwks_uri"],
+    errors: ['line 5: "https://c.example type=x509": expected <https URL> [type=directory|jwks_uri|cimd]'],
+  });
+});
+
+test("cli: an agents.txt line that does not parse is a config error: exit 1, no fetch, the store untouched", async () => {
+  const d = cliDir("# ours\nhttps://a.example\nhttps://b.example/keys type=jwk\n\nhttp://c.example\n");
+  try {
+    const store = join(d, "wba-keys.tsv");
+    const before = format([{ identifier: ID("a.example"), keyid: KID_KEY, type: "ed25519", publicKeyHex: HEX_KEY }], new Date(0));
+    writeFileSync(store, before);
+    const urls: string[] = [], out: string[] = [];
+    const code = await keysyncMain(["--origins", join(d, "agents.txt"), "--out", store],
+      { fetchImpl: recFetch({}, urls), resolve: publicDns, log: (l) => out.push(l), error: (l) => out.push(l) });
+    assert.equal(code, 1, out.join("\n"));
+    assert.deepEqual(urls, [], "nothing fetched");
+    assert.equal(readFileSync(store, "utf8"), before, "the store as it was: the keys of the agent on line 3 are not dropped");
+    assert.ok(!existsSync(`${store}.cache.json`) && !existsSync(`${store}.history`));
+    assert.match(out.join("\n"), /agents\.txt: line 3: "https:\/\/b\.example\/keys type=jwk": expected <https URL> \[type=directory\|jwks_uri\|cimd\]/);
+    assert.match(out.join("\n"), /agents\.txt: line 5: "http:\/\/c\.example": not an https origin/);
+    assert.match(out.at(-1)!, /agents\.txt: 2 line\(s\) key sync cannot use; fix them and run again\. The store was not touched$/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("cli: what it prints carries no control character, whatever a directory or the network sent", async () => {
+  const d = cliDir("https://a.example\nhttps://b.example\nhttps://c.example/k type=jwks_uri\n");
+  try {
+    const out: string[] = [];
+    const evil = "\u001b]0;owned\u0007\u001b[2J";
+    const body = evil + "{";
+    const code = await keysyncMain(["--origins", join(d, "agents.txt"), "--out", join(d, "wba-keys.tsv")], {
+      resolve: publicDns, log: (l) => out.push(l), error: (l) => out.push(l),
+      fetchImpl: fakeFetch({
+        [ID("a.example")]: () => new Response(body, { status: 200, headers: { "content-type": MEDIA_TYPE } }),
+        [ID("b.example")]: () => { throw new Error(`certificate names ${evil}evil.example`); },
+        "https://c.example/k": json({ keys: [OKP] }),
+      }) });
+    assert.equal(code, 2, out.join("\n"));
+    for (const l of out) assert.doesNotMatch(l, /[\u0000-\u001f\u007f-\u009f]/, JSON.stringify(l)); // eslint-disable-line no-control-regex -- asserts no control character reaches the output
+    assert.ok(out.includes(`failed: https://a.example: the body (${new TextEncoder().encode(body).length} bytes) is not UTF-8 JSON`), out.join("\n"));
+    assert.ok(out.includes("failed: https://b.example: certificate names  ]0;owned  [2Jevil.example"), out.join("\n"));
+    assert.match(out.at(-1)!, /^wba-keysync: 1 keys from 1\/3 origins/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("cli: run as a script on this runtime, a bad agents.txt line exits 1 before any fetch", () => {
+  const d = cliDir("https://a.example type=x509\n");
+  try {
+    const cli = new URL("./cli.ts", import.meta.url).pathname;
+    const r = spawnSync(process.execPath, [cli, "--origins", join(d, "agents.txt"), "--out", join(d, "wba-keys.tsv")], { encoding: "utf8", timeout: 20000 });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /line 1: "https:\/\/a\.example type=x509": expected/);
+    assert.ok(!existsSync(join(d, "wba-keys.tsv")));
+  } finally {
+    rmSync(d, { recursive: true, force: true });
   }
 });

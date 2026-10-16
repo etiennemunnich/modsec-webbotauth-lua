@@ -150,13 +150,13 @@ test("textList: one address or range per line, comments and blank lines skipped;
   assert.match(f[0].detail, /2 ranges \(2 IPv4, 0 IPv6\)/);
 });
 
-test("embeddedList: a page that starts with a brace and holds no list object ends, quickly (Forge F3)", () => {
+test("embeddedList: a page that starts with a brace and holds no list object ends, quickly", () => {
   const t0 = Date.now();
   for (const page of ['{"prefixes":x}', '{"prefixes": [', "{".repeat(3000) + '"prefixes"']) assert.throws(() => embeddedList(page));
   assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms`);
 });
 
-test("checkSources: a private, loopback or link-local host is refused before any fetch (draft 6.7; Forge F2)", async () => {
+test("checkSources: a private, loopback or link-local host is refused before any fetch (draft 6.7)", async () => {
   let fetched = 0;
   const count = (async () => { fetched++; return new Response("{}"); }) as unknown as typeof fetch;
   const r = await checkSources({ name: "p", docs: "https://intranet.example/", ips: "https://intranet.example/ips.json", wba: "https://intranet.example" },
@@ -166,14 +166,14 @@ test("checkSources: a private, loopback or link-local host is refused before any
   assert.match(r[1].detail, /private, loopback or link-local/);
 });
 
-test("checkSources: a list holding a range wider than an IPv4 /8 or IPv6 /16 is refused (Forge F7)", async () => {
+test("checkSources: a list holding a range wider than an IPv4 /8 or IPv6 /16 is refused", async () => {
   const r = await check({ name: "w", ips: "https://w.example/ips.json" },
     server({ "https://w.example/ips.json": () => Response.json({ prefixes: [{ ipv4Prefix: "0.0.0.0/0" }, { ipv6Prefix: "::/0" }] }) }));
   assert.equal(r[0].level, "fail");
   assert.match(r[0].detail, /wider than \/8 \(IPv4\) or \/16 \(IPv6\), such as 0\.0\.0\.0\/0: refused/);
 });
 
-test("checkSources: a list over 4 MiB is refused without being read whole (Forge F4)", async () => {
+test("checkSources: a list over 4 MiB is refused without being read whole", async () => {
   const big = () => new Response(new ReadableStream({ start(c) { for (let i = 0; i < 80; i++) c.enqueue(new Uint8Array(65536)); c.close(); } }),
     { headers: { "content-type": "application/json" } });
   const r = await check({ name: "b", ips: "https://b.example/ips.json" }, server({ "https://b.example/ips.json": big }));
@@ -201,4 +201,26 @@ test("checkEntries: policy, claim_only and robots fields; a token that would cla
   assert.match(fails([{ name: "g", user_agent: "GBot" }, { name: "n", user_agent: "gbot-news" }]).join(),
     /g user_agent: token "gbot" is also inside n's "gbot-news": a User-Agent with that token would claim both bots/);
   assert.equal(fails([{ name: "x", user_agent: "Same" }, { name: "y", user_agent: "same" }]).length, 2);
+});
+
+test("checkEntries: a name is a string (YAML reads name: 360 as a number), not reserved, with no newline; wba is one URL", () => {
+  const fails = (bots: Bot[]) => checkEntries(bots).filter((f) => f.level === "fail").map((f) => `${f.bot} ${f.check}: ${f.detail}`);
+  const ok = { ips: "https://x.example/a.json" };
+  assert.deepEqual(fails([{ name: 360 as unknown as string, ...ok }]), ["#1 name: name 360 is not a string: quote it"]);
+  assert.deepEqual(fails([{ name: false as unknown as string, ...ok }]), ["#1 name: name false is not a string: quote it"]);
+  assert.deepEqual(fails([{ ...ok } as Bot]), ["#1 name: no name"]);
+  assert.deepEqual(fails([{ name: "a\nhttps://evil.example", ...ok }]),
+    ['a\nhttps://evil.example name: name "a\\nhttps://evil.example": lower-case letters, digits and hyphens']);
+  assert.deepEqual(fails([{ name: "tokens", ...ok }]),
+    ["tokens name: name \"tokens\" is reserved: lists.ts writes its own tokens.data beside each bot's <name>.data"]);
+  assert.deepEqual(fails([{ name: "w", wba: "https://w.example/client type=cimd" }]),
+    ['w wba: wba "https://w.example/client type=cimd": one URL, no spaces (wba_type says the type)']);
+});
+
+test("checkEntries: a value is shown cut short, and a nested one by its kind, never serialised whole", () => {
+  let nest: unknown = "x";
+  for (let i = 0; i < 7; i++) nest = Array(10).fill(nest); // shared, as YAML aliases are: 10^7 leaves
+  const long = "L".repeat(1000) + "\u0000";
+  const found = checkEntries([{ name: "a", user_agent: [nest as string, long] }]).filter((f) => f.check === "user_agent" && f.level === "fail");
+  assert.deepEqual(found.map((f) => f.detail), ["a list: not a printable token", `"${"L".repeat(199)}...": not a printable token`]);
 });

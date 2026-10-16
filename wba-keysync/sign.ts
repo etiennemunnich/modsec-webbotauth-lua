@@ -21,7 +21,6 @@
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { DEFAULT_LIMITS, format, identifier, keysFromDirectory } from "./keysync.ts";
 
 const DEFAULT_AGENT = "https://test-agent.example";
@@ -134,6 +133,6 @@ async function main(argv: string[]) {
   fail("unknown command");
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (import.meta.main) {
   await main(process.argv.slice(2)).catch((e) => fail((e as Error).message));
 }

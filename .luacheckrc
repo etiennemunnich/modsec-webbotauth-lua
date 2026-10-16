@@ -1,4 +1,4 @@
--- luacheck (.githooks/scan.ts runs it on the Lua files a commit holds).
+-- luacheck settings: luacheck lua/wba lua/tests
 std = "lua53"            -- the CRS image runs Lua 5.3
 max_line_length = false
 

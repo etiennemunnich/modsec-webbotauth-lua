@@ -1,0 +1,81 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/automated-security-helper/refs/heads/main/automated_security_helper/schemas/AshConfig.json
+# ASH configuration for .github/workflows/security.yml. A finding at MEDIUM or
+# above fails the scan unless a suppression below names its rule and its
+# place, with the reason it is not a defect. A suppression is never a fix:
+# anything real is fixed in the code.
+project_name: modsec-webbotauth-lua
+global_settings:
+  severity_threshold: MEDIUM
+  suppressions:
+    # detect-secrets: high-entropy strings that are public by design.
+    - path: lua/tests/**/*
+      rule_id: SECRET-*
+      reason: >-
+        Test vectors: RFC 9421 Appendix B, RFC 8032, RFC 7515/7517 and Wycheproof
+        keys and signatures, the draft's examples, SHA test vectors, and a
+        deliberately invalid identifier URL with userinfo. All published or
+        test-only; nothing outside the tests reads them.
+    - path: wba-keysync/*.test.ts
+      rule_id: SECRET-*
+      reason: The same published test vectors, for key-sync's tests.
+    - path: lua/wba/verify.lua
+      rule_id: SECRET-BASE64-HIGH-ENTROPY-STRING
+      line_start: 77
+      line_end: 86
+      reason: >-
+        M.TEST_KEY_THUMBPRINTS: JWK thumbprints of published test keys, which the
+        verifier refuses (draft 6.8). A thumbprint is a public hash. If the table
+        moves, this range stops matching and the scan fails until it is updated.
+    - path: wba-keysync/keysync.ts
+      rule_id: SECRET-BASE64-HIGH-ENTROPY-STRING
+      line_start: 44
+      line_end: 53
+      reason: TEST_KEY_THUMBPRINTS, the same public list as verify.lua's (draft 6.8).
+    - path: wba-keysync/keysync.ts
+      rule_id: SECRET-BASE64-HIGH-ENTROPY-STRING
+      line_start: 150
+      line_end: 150
+      reason: The base64url alphabet (RFC 4648 5), used to check a final character.
+    - path: lua/wba/README.md
+      rule_id: SECRET-*
+      reason: Documentation examples (a sample Accept-Signature nonce and a sample keyid).
+    - path: lua/wba/DESIGN.md
+      rule_id: SECRET-*
+      reason: Documentation example (a sample Accept-Signature nonce).
+    - path: lua/wba/evidence/*.md
+      rule_id: SECRET-*
+      reason: >-
+        Requests captured from the live test container (crs-evidence.sh): their
+        signatures, nonces, digests and key ids come from throwaway test keys
+        made for the run, and a key id is a public thumbprint.
+    - path: lua/wba/HOW-IT-WORKS.md
+      rule_id: SECRET-*
+      reason: >-
+        Documentation example (a sample keyid, which is a JWK thumbprint: a
+        public hash).
+    # Semgrep
+    - path: lua/tests/live/h2.ts
+      rule_id: problem-based-packs.insecure-transport.js-node.bypass-tls-verification.bypass-tls-verification
+      line_start: 35
+      line_end: 35
+      reason: >-
+        rejectUnauthorized: false for the local test container's self-signed
+        certificate on 127.0.0.1 (curl -k in the same suite); said so in the file.
+    - path: lua/tests/live/ftw-agent.ts
+      rule_id: problem-based-packs.insecure-transport.js-node.bypass-tls-verification.bypass-tls-verification
+      line_start: 84
+      line_end: 84
+      reason: >-
+        rejectUnauthorized: false for the local test container's self-signed
+        certificate on 127.0.0.1, the go-ftw test bot's only peer; said so in the file.
+    # Checkov
+    - path: lua/wba/Dockerfile
+      rule_id: CKV_DOCKER_7
+      reason: >-
+        FROM ${CRS_IMAGE}: Checkov does not resolve the ARG, which pins the base
+        image by version tag and sha256 digest.
+    - path: lua/wba/Dockerfile
+      rule_id: CKV_DOCKER_2
+      reason: >-
+        No HEALTHCHECK, like the owasp/modsecurity-crs image it extends; health
+        is the orchestrator's (Kubernetes probes, a compose healthcheck).

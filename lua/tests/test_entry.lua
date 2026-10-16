@@ -78,6 +78,16 @@ local function run_entry(headers, o)
     o = o or {}
     local m, tx, calls = mock(headers, o)
     if o.break_getvars then m.getvars = function() error("boom") end end
+    if o.fail_setvar then -- m.setvar raises once, for this variable only
+        local real, armed = m.setvar, true
+        m.setvar = function(k, v)
+            if armed and k == o.fail_setvar then
+                armed = false
+                error("boom: " .. k)
+            end
+            return real(k, v)
+        end
+    end
     _G.m = m
     _G.WBA_CONFIG = { lua_path = H.here .. "../?.lua", keys_path = o.keys_path or KEYS_PATH,
                       scheme = "https", policy = {} }
@@ -358,7 +368,7 @@ tx = with({ ["tx.wba_grant_agents"] = "https://other.example " .. H.AGENT }, FUL
 H.eq(tx["tx.wba_granted"], "1", "exact origin granted, @method and @path covered")
 tx = with({ ["tx.wba_grant_agents"] = H.AGENT })
 H.eq(tx["tx.wba_status"] .. "/" .. (tx["tx.wba_granted"] or "-"), "verified/-",
-    "verified, but @authority alone verifies for any method and path: no grant (review F4)")
+    "verified, but @authority alone verifies for any method and path: no grant")
 tx = with({ ["tx.wba_grant_agents"] = H.AGENT, ["tx.wba_grant_require_components"] = "none" })
 H.eq(tx["tx.wba_granted"], "1", "grant_require_components=none: the operator's choice")
 local TARGET = signed_headers({ components = '"@method" "@target-uri" "signature-agent";key="agent1"',
@@ -372,6 +382,16 @@ H.eq(tx["tx.wba_status"], "verified")
 H.eq(tx["tx.wba_granted"], nil, "a prefix or a longer host never grants")
 tx = with({ ["tx.wba_grant_agents"] = H.AGENT }, signed_headers({ host = "evil.example" }))
 H.eq(tx["tx.wba_granted"], nil, "never granted unless verified")
+-- An error after the grant (here the next write, tx.wba_reason) makes the
+-- outcome unverified/internal-error, so the grant and the identity the
+-- verified branch had set are taken back: recipe C keys on the grant alone.
+local fail_tx = run_entry(FULL, { tx = { ["tx.wba_grant_agents"] = H.AGENT }, fail_setvar = "tx.wba_reason" })
+H.eq(fail_tx["tx.wba_status"] .. "/" .. fail_tx["tx.wba_reason"], "unverified/internal-error")
+H.eq(fail_tx["tx.wba_granted"], "0", "a grant set before the error is taken back")
+for _, k in ipairs({ "agent", "agents", "agent_proof", "keyid", "label", "created", "expires", "covered", "sighash",
+                     "uses", "nonce_uses" }) do
+    H.eq(fail_tx["tx.wba_" .. k], "n/a", "tx.wba_" .. k .. " back to n/a after an internal error")
+end
 tx = with({ ["tx.wba_require_components"] = "@path" })
 H.eq(tx["tx.wba_status"] .. "/" .. tx["tx.wba_reason"], "unverified/insufficient-coverage")
 tx = with({ ["tx.wba_require_components"] = "@authority signature-agent" })
@@ -557,6 +577,21 @@ H.eq(tx["tx.wba_status"] .. " " .. tx["tx.wba_uses"], "verified 2", "(r, n - s) 
 H.eq(tx["tx.wba_sighash"] ~= first_sighash, true, "different signature bytes")
 tx = run_ec(headers_by(P256, "ecdsa-p256-sha256", nil))
 H.eq(tx["tx.wba_status"] .. " " .. tx["tx.wba_uses"], "verified 3", "a fresh ECDSA signature over the same base is the same statement")
+-- The counter is named by the signature alone (its own expires), never by
+-- this request's policy: the same statement under another server block's
+-- tx.wba_expiry_grace or tx.wba_max_age keeps one count.
+local PDIR = H.tmp("replay-policies")
+assert(H.sh(("rm -rf '%s' && mkdir -p '%s'"):format(PDIR, PDIR)))
+local policy_uses = {}
+for _, s in ipairs({ {}, { ["tx.wba_expiry_grace"] = "60", ["tx.wba_max_age"] = "600" }, { ["tx.wba_max_age"] = "0" } }) do
+    s["tx.wba_replay_dir"] = PDIR
+    policy_uses[#policy_uses + 1] = with(s)["tx.wba_uses"]
+end
+H.eq(table.concat(policy_uses, " "), "1 2 3", "one count whatever the grace and max_age")
+local listing = io.popen(("ls -A '%s'"):format(PDIR))
+local counters = listing:read("a")
+listing:close()
+H.eq(counters:match("^s%.(%d+)%.%x+\n$"), tostring(NOW + 300), "one file, named by the signature's own expires: " .. counters)
 -- Draft 5.3: an origin that wants a nonce on every signature can require one.
 tx = with({ ["tx.wba_require_nonce"] = "1" })
 H.eq(tx["tx.wba_status"] .. "/" .. tx["tx.wba_reason"], "unverified/missing-nonce")
@@ -604,7 +639,7 @@ H.eq(tx["tx.wba_status"] .. "/" .. tx["tx.wba_reason"], "unverified/no-site-name
 local other = signed_headers({ host = "other.example", lines = { '"@authority": other.example', '"signature-agent";key="agent1": "' .. H.AGENT .. '"' } })
 tx = with({ ["tx.wba_grant_agents"] = H.AGENT, ["tx.wba_grant_require_components"] = "none" }, other)
 H.eq(tx["tx.wba_status"] .. "/" .. tx["tx.wba_reason"] .. "/" .. (tx["tx.wba_granted"] or "-"), "invalid/foreign-authority/-",
-    "a signature made for other.example, replayed here with its Host: refused, never granted (review F1)")
+    "a signature made for other.example, replayed here with its Host: refused, never granted")
 tx = with({ ["tx.wba_site_names"] = "Example.COM:443 www.example.com" })
 H.eq(tx["tx.wba_status"], "verified", "site names normalized like the Host header")
 for _, bad in ipairs({ "https://example.com", "example.com/x", "example.com:x", "*.example.com" }) do

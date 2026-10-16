@@ -28,7 +28,7 @@
  * Exit 0: no failures (warnings allowed unless --strict). Exit 1: a failure.
  * Exit 2: usage. Only the URLs in the file are fetched.
  */
-import { DEFAULT_LIMITS, getDirectory, guardAddress, HttpError, keysFromDirectory, readCapped, resolveHost, type FetchLike, type Resolver } from "./keysync.ts";
+import { DEFAULT_LIMITS, getDirectory, guardAddress, HttpError, keysFromDirectory, printable, readCapped, resolveHost, type FetchLike, type Resolver } from "./keysync.ts";
 import { directoryProofs } from "./proof.ts";
 import { directoryIdentifier, WELL_KNOWN } from "./identifier.ts";
 
@@ -194,6 +194,35 @@ export function drift(copy: Cidr[], live: Cidr[]): Drift {
 const DNS_SUFFIX = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const asList = <T>(x: T | T[] | undefined): T[] => (x === undefined ? [] : Array.isArray(x) ? x : [x]);
 
+/**
+ * A value from a bots file, shown in a message: a string JSON-quoted and cut
+ * at 200 characters; anything else by its kind, never serialised (YAML
+ * aliases nest, so serialising one can take memory exponential in its depth).
+ */
+export function show(v: unknown): string {
+  if (typeof v === "string") { const s = JSON.stringify(v); return s.length > 200 ? `${s.slice(0, 200)}..."` : s; }
+  if (typeof v === "number" || typeof v === "boolean" || v === null) return String(v);
+  return Array.isArray(v) ? "a list" : typeof v === "object" ? "a mapping" : typeof v;
+}
+
+/**
+ * Why a bot name is unusable, or null. A name becomes a rule value, a file
+ * name (lists.ts) and a comment line (agents.ts, robots.ts), so it is a
+ * string of lower-case letters, digits and hyphens: never a number or a
+ * boolean (YAML reads `name: 360` as a number), never a space, a newline or
+ * a control character.
+ */
+export function nameProblem(name: unknown): string | null {
+  if (typeof name !== "string") return name === undefined ? "no name" : `name ${show(name)} is not a string: quote it`;
+  return /^[a-z0-9][a-z0-9-]{0,62}$/.test(name) ? null : `name ${show(name)}: lower-case letters, digits and hyphens`;
+}
+
+/**
+ * Names a bot cannot take: lists.ts writes each bot's IP list to
+ * <name>.data and every User-Agent token to tokens.data, in one directory.
+ */
+const RESERVED_NAMES = new Set(["tokens"]);
+
 /** Checks that need no network: names, URLs, suffixes, User-Agent tokens, hand-kept ranges. */
 export function checkEntries(bots: Bot[]): Finding[] {
   const out: Finding[] = [];
@@ -202,25 +231,29 @@ export function checkEntries(bots: Bot[]): Finding[] {
     const bot = typeof b?.name === "string" && b.name ? b.name : `#${i + 1}`;
     const f = (check: string, level: Level, detail: string) => out.push({ bot, check, level, detail });
     if (!b || typeof b !== "object") { f("entry", "fail", "not a mapping"); continue; }
-    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(b.name ?? "")) f("name", "fail", "name: lower-case letters, digits and hyphens");
+    const why = nameProblem(b.name);
+    if (why !== null) f("name", "fail", why);
+    else if (RESERVED_NAMES.has(b.name)) f("name", "fail", `name "${b.name}" is reserved: lists.ts writes its own ${b.name}.data beside each bot's <name>.data`);
     else if (names.has(b.name)) f("name", "fail", "duplicate name");
     names.add(b.name);
     if (!b.wba && asList(b.ips).length === 0 && asList(b.user_agent).length === 0) f("entry", "fail", "needs at least one of wba, ips, user_agent");
     if (b.category === undefined) f("category", "warn", "no category");
-    else if (!Object.hasOwn(CATEGORIES, b.category)) f("category", "fail", `${b.category}: not one of ${Object.keys(CATEGORIES).join(", ")}`);
+    else if (typeof b.category !== "string" || !Object.hasOwn(CATEGORIES, b.category)) f("category", "fail", `${show(b.category)}: not one of ${Object.keys(CATEGORIES).join(", ")}`);
     for (const p of asList(b.purpose)) {
-      if (!(AIPREF_LABELS as readonly unknown[]).includes(p)) f("purpose", "fail", `${p}: not an AIPREF label (${AIPREF_LABELS.join(", ")})`);
+      if (!(AIPREF_LABELS as readonly unknown[]).includes(p)) f("purpose", "fail", `${show(p)}: not an AIPREF label (${AIPREF_LABELS.join(", ")})`);
     }
     if (asList(b.docs).length === 0) f("docs", "warn", "no operator documentation: the category and tokens cannot be traced to a source");
-    for (const u of [b.wba, ...asList(b.ips), ...asList(b.docs)].filter((x): x is string => x !== undefined)) {
+    for (const u of [b.wba, ...asList(b.ips), ...asList(b.docs)].filter((x) => x !== undefined)) {
       let ok = false;
-      try { ok = new URL(u).protocol === "https:"; } catch { /* not a URL */ }
-      if (!ok) f("url", "fail", `${u}: not an https URL`);
+      try { ok = typeof u === "string" && new URL(u).protocol === "https:"; } catch { /* not a URL */ }
+      if (!ok) f("url", "fail", `${show(u)}: not an https URL`);
     }
+    // One URL: agents.txt's parser splits a line at whitespace, so "URL type=cimd" would change the agent's type.
+    if (typeof b.wba === "string" && /\s/.test(b.wba)) f("wba", "fail", `wba ${show(b.wba)}: one URL, no spaces (wba_type says the type)`);
     if (b.wba_type !== undefined && b.wba_type !== "directory" && b.wba_type !== "jwks_uri") f("wba", "fail", "wba_type: directory or jwks_uri");
-    for (const s of asList(b.rdns)) if (!DNS_SUFFIX.test(String(s))) f("rdns", "fail", `${s}: not a DNS name suffix`);
+    for (const s of asList(b.rdns)) if (typeof s !== "string" || !DNS_SUFFIX.test(s)) f("rdns", "fail", `${show(s)}: not a DNS name suffix`);
     const tokens = asList(b.user_agent);
-    for (const t of tokens) if (typeof t !== "string" || !/^[\x21-\x7e][\x20-\x7e]*$/.test(t)) f("user_agent", "fail", `${JSON.stringify(t)}: not a printable token`);
+    for (const t of tokens) if (typeof t !== "string" || !/^[\x21-\x7e][\x20-\x7e]*$/.test(t)) f("user_agent", "fail", `${show(t)}: not a printable token`);
     if (b.user_agent_example !== undefined && !tokens.some((t) => b.user_agent_example!.includes(t))) {
       f("user_agent", "fail", "user_agent_example contains none of the user_agent tokens");
     }
@@ -228,13 +261,13 @@ export function checkEntries(bots: Bot[]): Finding[] {
       f("user_agent", "warn", "User-Agent only: anyone can send it, so it can only ever be a claim");
     }
     if (b.cidrs !== undefined) {
-      const bad = asList(b.cidrs).filter((c) => !parseCidr(String(c)));
-      if (bad.length) f("cidrs", "fail", `not IP ranges: ${bad.slice(0, 3).join(", ")}`);
+      const bad = asList(b.cidrs).filter((c) => typeof c !== "string" || !parseCidr(c));
+      if (bad.length) f("cidrs", "fail", `not IP ranges: ${bad.slice(0, 3).map(show).join(", ")}`);
     }
-    if (b.policy !== undefined && !(POLICIES as readonly unknown[]).includes(b.policy)) f("policy", "fail", `${JSON.stringify(b.policy)}: one of ${POLICIES.join(", ")}`);
+    if (b.policy !== undefined && !(POLICIES as readonly unknown[]).includes(b.policy)) f("policy", "fail", `${show(b.policy)}: one of ${POLICIES.join(", ")}`);
     if (b.claim_only !== undefined && typeof b.claim_only !== "boolean") f("claim_only", "fail", "claim_only: true or false");
     if (b.claim_only && tokens.length === 0) f("claim_only", "warn", "claim_only without user_agent tokens does nothing");
-    for (const t of asList(b.robots)) if (typeof t !== "string" || !/^[A-Za-z0-9._-]+$/.test(t)) f("robots", "fail", `${JSON.stringify(t)}: a robots.txt product token (letters, digits, ".", "_", "-")`);
+    for (const t of asList(b.robots)) if (typeof t !== "string" || !/^[A-Za-z0-9._-]+$/.test(t)) f("robots", "fail", `${show(t)}: a robots.txt product token (letters, digits, ".", "_", "-")`);
   }
   // One User-Agent naming two bots would be ambiguous: the claim names
   // whichever token the engine reports first. Compared without case, as the
@@ -243,7 +276,7 @@ export function checkEntries(bots: Bot[]): Finding[] {
     .filter((t): t is string => typeof t === "string").map((t) => [b.name, t.toLowerCase()] as [string, string]));
   for (const [a, ta] of owner) {
     const other = owner.find(([b, tb]) => b !== a && tb.includes(ta));
-    if (other) out.push({ bot: a, check: "user_agent", level: "fail", detail: `token ${JSON.stringify(ta)} is also inside ${other[0]}'s ${JSON.stringify(other[1])}: a User-Agent with that token would claim both bots` });
+    if (other) out.push({ bot: a, check: "user_agent", level: "fail", detail: `token ${show(ta)} is also inside ${other[0]}'s ${show(other[1])}: a User-Agent with that token would claim both bots` });
   }
   return out;
 }
@@ -316,16 +349,16 @@ export function embeddedList(html: string): unknown {
   throw new Error("an HTML page whose \"prefixes\" is not in a JSON object");
 }
 
-/** Network checks for one bot: its IP lists (and any hand-kept copy) and its key directory. */
 /** The widest range a bot's IP list may hold: an IPv4 /8, an IPv6 /16. */
 export const MIN_V4_BITS = 8, MIN_V6_BITS = 16;
 
+/** Network checks for one bot: its IP lists (and any hand-kept copy) and its key directory. */
 export async function checkSources(
   b: Bot, fetchImpl: FetchLike = fetch, now?: number, resolve: Resolver = resolveHost,
 ): Promise<Finding[]> {
   const out: Finding[] = [];
   // Details carry text from the network (headers, parse errors): no control characters.
-  const f = (check: string, level: Level, detail: string) => out.push({ bot: b.name, check, level, detail: detail.replace(/[\x00-\x1f\x7f]/g, " ") }); // eslint-disable-line no-control-regex -- strips control characters from a remote value before printing it
+  const f = (check: string, level: Level, detail: string) => out.push({ bot: b.name, check, level, detail: printable(detail) });
 
   // The operator's documentation is where the category and tokens come from:
   // it should still be there. Only a warning when it is not, since many
@@ -420,7 +453,7 @@ async function main(argv: string[]) {
   for (const b of bots) if (!broken.has(b.name)) findings.push(...await checkSources(b));
 
   if (argv.includes("--json")) console.log(JSON.stringify(findings, null, 1));
-  else for (const x of findings) console.log(`${x.level.toUpperCase().padEnd(4)}  ${x.bot}  ${x.check}: ${x.detail}`);
+  else for (const x of findings) console.log(`${x.level.toUpperCase().padEnd(4)}  ${printable(x.bot)}  ${x.check}: ${x.detail}`); // a name is printed before it is checked
   const fails = findings.filter((x) => x.level === "fail").length, warns = findings.filter((x) => x.level === "warn").length;
   if (!argv.includes("--json")) console.log(`== ${bots.length} bots: ${fails} failure(s), ${warns} warning(s)`);
   process.exit(fails || (argv.includes("--strict") && warns) ? 1 : 0);

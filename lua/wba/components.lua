@@ -266,13 +266,16 @@ local function derived(req, item)
     elseif name == "@path" then
         v = path
     elseif name == "@query" then
-        -- Only for an origin-form target (path known). Otherwise the query
-        -- is unavailable, not absent: nginx hands ModSecurity "?evil=1"
+        -- Only when the target starts with "/" (path known: origin-form, or
+        -- what nginx hands over after an absolute-form host). Otherwise the
+        -- query is unavailable, not absent: nginx hands ModSecurity "?evil=1"
         -- for "GET http://host?evil=1", and "?" must not match that.
         if path ~= nil then v = "?" .. (req.query or "") end
     elseif name == "@request-target" then
-        -- 2.2.5, origin-form: the raw path and query. A signed request with any
-        -- other target form never reaches ModSecurity (the nginx guard).
+        -- 2.2.5, built in origin-form from the raw path and query. For an
+        -- absolute-form line nginx hands over only what follows the host, so
+        -- "GET http://example.com/x" gives "/x", which a signature over the
+        -- full URL does not match; with no "/" after the host it is unavailable.
         if req.path then v = req.path .. (req.query and ("?" .. req.query) or "") end
     elseif name == "@target-uri" then
         if not req.scheme then return nil, "unsupported-component" end

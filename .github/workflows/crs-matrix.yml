@@ -1,0 +1,115 @@
+# The version matrix: lua/tests/live/run.sh against every image in
+# lua/tests/live/crs-images.txt, one job per image. Each job records
+# what the image actually contains (lua/tests/live/matrix.sh) and fails unless
+# its row reads PASS; the summary job puts every row in one table.
+#
+# Runs when the image list or the Dockerfile changes on main, on the first of
+# each month, and by hand (Actions > crs-matrix > Run workflow). With 24
+# images at 2 to 4 minutes each, a run on one CLI costs about 70 to 80
+# runner-minutes, eight jobs at a time; too many minutes to spend on every
+# push.
+#
+# Scheduled and push runs use Finch. A run by hand uses Finch and Docker (the
+# runner's own), one job per image per CLI, to prove the matrix on both; it
+# takes no inputs (Checkov CKV_GHA_7: user input must not shape a run).
+name: crs-matrix
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 1 * *"
+  push:
+    branches: [main]
+    paths:
+      - lua/tests/live/crs-images.txt
+      - lua/wba/Dockerfile
+
+permissions:
+  contents: read
+
+# A newer run (a later image list, say) cancels an older one still in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  list:
+    name: Image list
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tags: ${{ steps.tags.outputs.tags }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: tags
+        run: echo "tags=$(grep -v -e '^#' -e '^$' lua/tests/live/crs-images.txt | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+  image:
+    needs: list
+    name: ${{ matrix.tag }} on ${{ matrix.runtime }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        tag: ${{ fromJSON(needs.list.outputs.tags) }}
+        runtime: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["finch","docker"]' || '["finch"]') }}
+    env:
+      # Finch runs as root on Linux; the runner's user can use Docker directly.
+      DOCKER: ${{ matrix.runtime == 'finch' && 'sudo finch' || 'docker' }}
+      LUA: lua5.4
+      TAG: ${{ matrix.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.11
+      - name: Install Lua and openssl
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends lua5.4 openssl
+      - name: Install Finch (removes the runner's Docker)
+        if: matrix.runtime == 'finch'
+        run: bash .github/scripts/install-finch.sh
+      - name: Run the live suite on this image
+        run: |
+          printf '%s\n' "$TAG" > "$RUNNER_TEMP/image.txt"
+          IMAGES="$RUNNER_TEMP/image.txt" LOGS="$RUNNER_TEMP/logs" bash lua/tests/live/matrix.sh "$RUNNER_TEMP/row.tsv"
+          cat "$RUNNER_TEMP/row.tsv"
+      - name: The row must read PASS
+        run: awk -F'\t' 'NR > 1 && $11 != "PASS" { bad = 1 } END { exit bad }' "$RUNNER_TEMP/row.tsv"
+      - name: Keep the row and, on failure, the run log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: row-${{ matrix.runtime }}-${{ matrix.tag }}
+          path: |
+            ${{ runner.temp }}/row.tsv
+            ${{ runner.temp }}/logs/
+          if-no-files-found: warn
+          retention-days: 35
+
+  summary:
+    name: Summary table
+    needs: image
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: row-*
+          path: rows
+      - name: One table
+        run: |
+          {
+            echo "| CLI | image | ModSecurity | connector | CRS | Lua | unit | Wycheproof | live pass | live fail | live skip | verdict |"
+            echo "|---|---|---|---|---|---|---|---|---|---|---|---|"
+            for f in rows/row-*/row.tsv; do
+              cli=${f#rows/row-}; cli=${cli%%-*}  # rows/row-<cli>-<tag>/row.tsv
+              tail -n +2 "$f" | sed "s/^/$cli\t/"
+            done | sort | awk -F'\t' '{ printf "|"; for (i = 1; i <= NF; i++) printf " %s |", $i; print "" }'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -71,10 +71,10 @@ serve() { # serve <bot> <port>: start that bot's key server and wait until it an
   echo "bot-$1's key server did not start"; return 1
 }
 for bot in a b; do
-  port=$([ $bot = a ] && echo 19443 || echo 19444)
+  port=$([ "$bot" = a ] && echo 19443 || echo 19444)
   bun wba-keysync/sign.ts init "$W/$bot" --agent "https://localhost:$port" >/dev/null
   cp "$W/$bot/test-agent.jwks.json" "$W/$bot.served.json"
-  serve $bot $port
+  serve "$bot" "$port"
 done
 
 bots() { # the bots file: the named bots, and one that only claims a User-Agent

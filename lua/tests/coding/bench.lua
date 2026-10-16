@@ -1,5 +1,5 @@
 -- bench.lua: what coding.lua's paths cost, to set its block charges and
--- the default decoding budget (TESTING.md, Content codings). Not a test.
+-- the default decoding budget (TESTING.md, Cost of a hostile request). Not a test.
 --   lua lua/tests/coding/bench.lua
 local here = arg[0]:match("(.*/)") or "./"
 package.path = here .. "../../?.lua;" .. here .. "?.lua;" .. package.path

@@ -5,19 +5,34 @@
 //   bun wba-keysync/sweep.ts --dir /var/lib/wba/replay [--max-window 3600] [--skew 300]
 //   node wba-keysync/sweep.ts ...
 //
-// s.<last>.<hash>     a signed statement: removed once last + skew has
-//                     passed. last is the last second a signature over it
-//                     can verify (it expires, or reaches tx.wba_max_age),
-//                     so none can verify after it (the verifier allows 60 s
-//                     of clock skew; the default margin is 300).
+// s.<expires>.<hash>  a signed statement, named by the signature's own
+//                     expires (never by the verifier's settings, so every
+//                     server block counts it in one file): removed once
+//                     expires + skew has passed (nothing verifies after
+//                     expires plus tx.wba_expiry_grace, at most 60 s), or
+//                     once unused (mtime) for longer than max-window + skew,
+//                     whichever comes first. Every signature over the
+//                     statement shares its created, so none verifies more
+//                     than max-window (tx.wba_max_age) plus the verifier's
+//                     60 s of clock skew after the statement's first use:
+//                     the file is still there for every use that can count,
+//                     and a bot that signs with a far-off expires cannot
+//                     keep it longer.
 // n.<hash>            a nonce: removed once unused (mtime) for longer than
 //                     max-window + skew. Any signature carrying it that can
 //                     still verify was made within max-window of its last
 //                     use, so its count is still there; a new signature
 //                     reusing a nonce unused for that long counts from 1.
-//                     Set max-window to the smaller of tx.wba_max_age
-//                     (3600 by default) and tx.wba_max_window; the default,
-//                     86400, is safe for any setting.
+//
+// --max-window must cover the longest any server block sharing the directory
+// lets a signature count: in each block, tx.wba_max_age (3600 by default), or
+// tx.wba_max_window where that is smaller; with tx.wba_max_age off,
+// tx.wba_max_window (a day unless set). The default, 86400, covers every
+// setting of a day or less; give a longer one when a block allows more, or a
+// counter is removed while a signature over it can still count. --skew
+// (default 300) must cover the verifier's 60 s clock skew,
+// tx.wba_expiry_grace (at most 60) and any clock difference between this
+// host and the WAF.
 //
 // Only regular files directly in the directory whose names match exactly are
 // touched; symlinks, directories and anything else are left alone and
@@ -26,7 +41,6 @@
 
 import { lstatSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 
 const STATEMENT = /^s\.(\d{1,15})\.[0-9a-f]{64}$/;
 const NONCE = /^n\.[0-9a-f]{64}$/;
@@ -46,10 +60,8 @@ export function sweep(dir: string, now: number, maxWindow = 86400, skew = 300, i
       continue;
     }
     const path = join(dir, name);
-    let expired: boolean;
-    if (statement) {
-      expired = Number(statement[1]) + skew < now;
-    } else {
+    let expired = statement !== null && Number(statement[1]) + skew < now;
+    if (!expired) { // a statement not yet expired, or a nonce: gone once unused for longer than any signature counts
       let mtimeMs: number;
       try {
         mtimeMs = io.lstatSync(path).mtimeMs;
@@ -91,4 +103,4 @@ function main(argv: string[]): number {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) process.exit(main(process.argv.slice(2)));
+if (import.meta.main) process.exit(main(process.argv.slice(2)));

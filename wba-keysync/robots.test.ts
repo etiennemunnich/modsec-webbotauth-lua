@@ -34,3 +34,11 @@ test("no bot to deny: nothing to ask", () => {
   assert.match(robotsTxt([{ name: "a", user_agent: "ABot", policy: "allow" }], "b.yaml", at), /# No bot in b\.yaml has policy deny: nothing to ask\.\n$/);
   assert.doesNotMatch(robotsTxt([], "b.yaml", at), /User-agent/);
 });
+
+test("a deny bot named so that validate.ts would refuse it fails the run; a token that is not a string is left out by its kind", () => {
+  assert.throws(() => robotsTxt([{ name: "x\nUser-agent: *", user_agent: "XBot", policy: "deny" }], "b.yaml", at),
+    /name "x\\nUser-agent: \*": lower-case letters, digits and hyphens/);
+  const text = robotsTxt([{ name: "y", user_agent: ["YBot", { a: 1 } as unknown as string], policy: "deny" }], "b.yaml", at);
+  assert.match(text, /# Left out \(not one word, so not a product token\): y: a mapping\n/);
+  assert.match(text, /\nUser-agent: YBot\nDisallow: \/\n$/);
+});

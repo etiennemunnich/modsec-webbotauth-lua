@@ -57,7 +57,7 @@ global WBA_CONFIG instead.
 local CONFIG = WBA_CONFIG or {
     lua_path = "/etc/modsecurity.d/wba/lua/?.lua",       -- where wba/*.lua live
     keys_path = "/etc/modsecurity.d/wba/keys/wba-keys.tsv", -- written by wba-keysync; mount the DIRECTORY
-    scheme = "https",  -- scheme clients use to reach this site (default port + @target-uri)
+    scheme = "https",  -- the scheme @scheme and @target-uri use for every request: ModSecurity cannot see TLS, so a plain-HTTP request gets it too (CONFORMANCE.md, choice 8)
     policy = {},       -- overrides for verify.DEFAULT_POLICY
 }
 
@@ -73,6 +73,13 @@ local crypto = require("wba.crypto")
 local replay = require("wba.replay")
 
 local HASH = { ["sha-256"] = sha256.digest, ["sha-512"] = crypto.sha512 }
+
+-- Set only on verified: wba.conf rule 1 sets each to "n/a" (and
+-- tx.wba_granted to 0) before this script runs, and an internal error puts
+-- them back (main()'s handler).
+local VERIFIED_ONLY = { "tx.wba_agent", "tx.wba_agents", "tx.wba_agent_proof", "tx.wba_keyid", "tx.wba_label",
+                        "tx.wba_created", "tx.wba_expires", "tx.wba_covered", "tx.wba_sighash", "tx.wba_uses",
+                        "tx.wba_nonce_uses" }
 
 local DEFAULT_PORT = { https = "443", http = "80" }
 
@@ -109,7 +116,11 @@ local function build_request(body_stage)
         authority = normalize_authority(fields["host"][1], CONFIG.scheme)
     end
 
-    -- Origin-form request target only; anything else leaves @path unavailable.
+    -- A target that starts with "/": origin-form, or what nginx hands over after
+    -- the host of an absolute-form line ("/x" for "GET http://other.example/x";
+    -- that host is lost: README, Known limits). Anything else ("?q=1" for
+    -- "GET http://h?q=1", "*") leaves @path, @query, @request-target,
+    -- @target-uri and @query-param unavailable.
     local path, query
     local raw = m.getvar("REQUEST_URI_RAW") or ""
     if raw:sub(1, 1) == "/" then
@@ -320,7 +331,7 @@ function main()
             uses = 0
             for _, k in ipairs(r.replay or {}) do
                 local n
-                n, why = replay.count(replay_dir, "s", k.basehash, k.last)
+                n, why = replay.count(replay_dir, "s", k.basehash, k.expires)
                 if not n then failed = true break end
                 if n > uses then uses = n end
                 if k.noncehash then
@@ -362,6 +373,11 @@ function main()
     end)
     if not ok then
         m.log(2, "[wba] internal error: " .. tostring(err))
+        -- The verified branch may have set the grant and the identity before
+        -- it raised. The outcome is not verified, so take them back: recipe
+        -- C, and an operator's own rules, may read tx.wba_granted alone.
+        m.setvar("tx.wba_granted", "0")
+        for _, name in ipairs(VERIFIED_ONLY) do m.setvar(name, "n/a") end
         m.setvar("tx.wba_status", "unverified")
         m.setvar("tx.wba_reason", "internal-error")
     end

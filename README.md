@@ -1,6 +1,6 @@
 # modsec-webbotauth-lua
 
-> **Do not use this in production yet.** This is an alpha for a few testers. Run it only on test sites. Rule IDs, settings and log fields may change before the first release.
+> **Alpha: do not use this in production yet.** This is a public alpha, for testing only. Run it on test sites, never in front of traffic you depend on. Rule IDs, settings and log fields may change before the first release. What is in this version: [CHANGELOG.md](CHANGELOG.md).
 
 Licensed under the [Apache License 2.0](LICENSE).
 
@@ -10,13 +10,14 @@ This checks signed requests from bots and AI agents at your web application fire
 
 Some bots now sign their requests, using a standard called [Web Bot Auth](https://datatracker.ietf.org/doc/draft-ietf-webbotauth-httpsig-protocol/). The bot signs each request with a private key, and publishes the matching public key on its own website. Anyone can then check that a request really came from that bot.
 
-This project does three things:
+This project does four things:
 
 1. `wba-keysync` downloads the public keys of the bots you choose.
 2. The plugin checks the signature on each request against those keys.
-3. It gives your WAF rules the result: `verified`, `invalid`, `unverified` or `not-signed`, and which bot signed.
+3. It gives your WAF rules the result: `verified`, `invalid`, `unverified` or `not-signed`, and which bot signed. [Outcomes and reasons](lua/wba/README.md#outcomes-and-reasons) lists every outcome and what it means.
+4. `lists.ts` writes plain ModSecurity rules from the IP lists and User-Agent names that bot operators publish, for the bots that do not sign yet. A request whose User-Agent names a bot is checked against that bot's own list: from a listed address it is `verified`, from anywhere else only `claimed`. A `policy` per bot (`allow`, `deny` or `log`) says what to do with it. With `policy_mode: log`, the default, the rules only write what they would refuse; `policy_mode: enforce` refuses with 403.
 
-It does not block anything on its own. You decide what happens, with rules. [`lua/wba/recipes.conf`](lua/wba/recipes.conf) has six example rules.
+It refuses almost nothing on its own; you decide what happens, with rules. [`lua/wba/recipes.conf`](lua/wba/recipes.conf) has six example rules. The one exception is a signed request it cannot read: a body digest the signature covers that cannot be parsed gets a 400 (rule 9534107).
 
 ## What is in this repository
 
@@ -34,12 +35,12 @@ You need [Finch](https://github.com/runfinch/finch) or Docker, and [Bun](https:/
 
 ## What to test
 
-1. Run the Quick start. Tell me if a step fails or is unclear.
-2. Put it in front of a test site in log-only mode. First set your site's host names (`tx.wba_site_names`, rule 9534017 in [`web-bot-auth-config.conf`](lua/wba/web-bot-auth-config.conf)): until you do, no signature verifies. Load the plugin without the example rules that refuse requests. Read the log lines for a few days.
-3. Choose the signing bots (level `signature`) from [`BOTS.md`](wba-keysync/BOTS.md) and copy them into your `bots.yaml`. Run `agents.ts` to write `agents.txt` from it, then run `wba-keysync` from cron. A log line names a bot only once its signature verifies. Before that, the audit log shows the request's `Signature-Agent` header.
+1. Run the Quick start. If a step fails or is unclear, open an issue.
+2. Put it in front of a test site with no rule that refuses. Load the plugin and leave `recipes.conf` out: the plugin then only sets variables and writes one JSON log line for each signed request ([Logs](lua/wba/README.md#logs)). First set your site's host names (`tx.wba_site_names`, rule 9534017 in [`web-bot-auth-config.conf`](lua/wba/web-bot-auth-config.conf)): until you do, no signature verifies (`unverified/no-site-names`). Read the log lines for a few days.
+3. Choose your bots. Copy [`wba-keysync/bots.seed.yaml`](wba-keysync/bots.seed.yaml) to `bots.yaml`, delete the bots you do not recognise, check it with `validate.ts`, and write `agents.txt` from it with `agents.ts`; only bots with a key source (level `signature` in [`BOTS.md`](wba-keysync/BOTS.md)) end up there. Then run key sync from cron. The steps are in the plugin README under [List the bots you recognise](lua/wba/README.md#2-list-the-bots-you-recognise) and [Keep their keys current](lua/wba/README.md#3-keep-their-keys-current). A log line names a bot only once its signature verifies. A bot you have not listed shows as `unverified/unknown-agent`, with no name; to see which bot it is, add the audit rule (9534139) under [Other logs](lua/wba/README.md#other-logs) for a while, and the audit log entry shows the request's `Signature-Agent` header.
 4. If you want, turn on one refusing rule at a time.
 
-I most want to hear about:
+The most useful reports:
 
 - a request it got wrong, such as a real bot marked `invalid`, or a request refused that should have passed;
 - extra load or slower responses at your WAF;
@@ -48,15 +49,14 @@ I most want to hear about:
 
 ## Known limits
 
-Read [Known limits](lua/wba/README.md#known-limits) before you start. The three that matter most for a test:
+Read [Known limits](lua/wba/README.md#known-limits) before you start. The two that matter most for a test:
 
 - **Rule IDs may still change** before the first release: 9534000-9534999 is not yet registered with the CRS plugin registry. Exclusions that name them may need updating.
-- **Behind a load balancer that ends TLS,** you must edit the nginx guard, or every signed request gets a 400.
-- **`validate.ts`, `agents.ts`, `report.ts`, `lists.ts`, `robots.ts` and the interop check need Bun.** The other tools also run on Node 26.
+- **Some tools need Bun:** `validate.ts`, `agents.ts`, `report.ts`, `lists.ts`, `robots.ts`, and `lua/tests/interop/interop.sh`, which checks your WAF against the latest upstream signing library and test vectors ([Check your deployment against the latest upstream](lua/wba/README.md#check-your-deployment-against-the-latest-upstream)). The other tools also run on Node 26.
 
 ## Feedback
 
-Open an issue and pick the form that fits:
+[Open an issue](https://github.com/etiennemunnich/modsec-webbotauth-lua/issues/new/choose) and pick the form that fits:
 
 - **Wrong result:** a request the plugin judged wrongly. Paste its log line.
 - **Something broke:** a step failed, a tool crashed, or nginx would not start.

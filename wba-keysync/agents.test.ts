@@ -78,3 +78,11 @@ test("CLI: --out renames into place, replacing a symlink; usage errors exit 1", 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a bot name validate.ts would refuse, or a wba with a space, fails the run: neither can add a line to agents.txt", () => {
+  assert.throws(() => agentsFromBots([{ name: "a\nhttps://evil.example", wba: "https://bot.example" }], "f"),
+    /^Error: name "a\\nhttps:\/\/evil\.example": lower-case letters, digits and hyphens \(validate\.ts checks every entry\)$/);
+  assert.throws(() => agentsFromBots([{ name: 360 as unknown as string, wba: "https://bot.example" }], "f"), /name 360 is not a string: quote it/);
+  assert.throws(() => agentsFromBots([{ name: "x", wba: "https://evil.example/client type=cimd" }], "f"), /^Error: x: wba must be one URL with no spaces/);
+  assert.throws(() => agentsFromBots([{ name: "x", wba: "https://evil.example/client\ttype=cimd" }], "f"), /x: wba must be one URL with no spaces/);
+});

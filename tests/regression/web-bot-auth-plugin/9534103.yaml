@@ -44,7 +44,7 @@ tests:
           log:
             match_regex: 'WBA-RESULT status=not-signed reason=no-signature '
   - test_id: 3
-    desc: "Signed 10 minutes ago, expired 5 minutes ago: invalid/expired"
+    desc: "Signed 10 minutes ago, expired 5 minutes ago: invalid/expired, and the request goes on (recipe F does not refuse an old signature)"
     stages:
       - input:
           dest_addr: 127.0.0.1
@@ -57,10 +57,11 @@ tests:
             Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
             X-WBA-Sign: expired
         output:
+          status: 502
           log:
             match_regex: 'WBA-RESULT status=invalid reason=expired '
   - test_id: 4
-    desc: "One bit of the signature changed: invalid/bad-signature, never verified"
+    desc: "One bit of the signature changed: invalid/bad-signature, never verified; recipe F (loaded by ftw.sh) refuses it"
     stages:
       - input:
           dest_addr: 127.0.0.1
@@ -73,10 +74,12 @@ tests:
             Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
             X-WBA-Sign: tampered
         output:
+          status: 403
           log:
+            expect_ids: [9534135]
             match_regex: 'WBA-RESULT status=invalid reason=bad-signature '
   - test_id: 5
-    desc: "A valid signature from a key the WAF's key store does not hold: unverified/unknown-key"
+    desc: "A valid signature from a key the WAF's key store does not hold: unverified/unknown-key, and the request goes on"
     stages:
       - input:
           dest_addr: 127.0.0.1
@@ -89,10 +92,11 @@ tests:
             Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
             X-WBA-Sign: unknown-key
         output:
+          status: 502
           log:
             match_regex: 'WBA-RESULT status=unverified reason=unknown-key '
   - test_id: 6
-    desc: "A valid signature made for another site (Host other.example, not in tx.wba_site_names): invalid/foreign-authority"
+    desc: "A valid signature made for another site (Host other.example, not in tx.wba_site_names): invalid/foreign-authority; recipe F refuses it"
     stages:
       - input:
           dest_addr: 127.0.0.1
@@ -105,5 +109,7 @@ tests:
             Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,image/png,*/*;q=0.5
             X-WBA-Sign: valid
         output:
+          status: 403
           log:
+            expect_ids: [9534135]
             match_regex: 'WBA-RESULT status=invalid reason=foreign-authority '

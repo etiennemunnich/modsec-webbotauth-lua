@@ -22,7 +22,8 @@ request instead. Format (version 2), one key per line, tab-separated:
                    ec-*     the SEC1 uncompressed point 04 || x || y (130 or 194 hex)
                    rsa      <n>:<e>, each the minimal big-endian bytes (RFC 7518 2,
                             Base64urlUInt); n of 2048 to 16384 bits and odd, e
-                            odd, 3 or more, at most 256 bits (algorithms.lua)
+                            odd, 3 or more, at most 256 bits; above 3072 bits,
+                            e must be at most 64 bits (algorithms.lua)
   nbf / exp      optional integer Unix times from the JWK, or "-"
   proof          draft Appendix B possession proof for this key in the
                  directory response key-sync last read: valid, invalid (a

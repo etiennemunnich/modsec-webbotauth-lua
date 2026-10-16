@@ -54,7 +54,7 @@ bots:
     docs: https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers
     description: "Crawling preferences addressed to the Googlebot user agent affect Google Search (including Discover and all Google Search features)"
     ips: https://developers.google.com/static/crawling/ipranges/common-crawlers.json
-    rdns: [googlebot.com, google.com]
+    rdns: [googlebot.com]
     user_agent: [Googlebot, Googlebot-Image, Googlebot-Video, Storebot-Google, Google-InspectionTool]
   - name: bingbot
     operator: Microsoft

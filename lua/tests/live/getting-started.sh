@@ -28,6 +28,15 @@ NAME=wba-getting-started-$$
 LB_PORT=18998
 # shellcheck disable=SC2034 # read by debian-page.sh, which this script sources
 RUN_OPTS=(-p "$LB_PORT:8443" --cap-add NET_ADMIN)
+# Every check below prints one PASS line, and finish fails unless exactly this
+# many passed: a check that quietly did not run fails the run. 53 = 13 for
+# what the page printed, 6 for the server, 10 for the body requests (5 per
+# HTTP version), 6 for paranoia level 4 (its one optional block included), 5
+# for log rotation and 13 behind the load balancer (its two blocks included).
+# Change it only together with the checks, or the page's optional and load
+# balancer blocks.
+# shellcheck disable=SC2034 # read by debian-page.sh's finish
+EXPECTED_PASSES=53
 # shellcheck source=debian-page.sh
 . "$HERE/debian-page.sh"
 
@@ -42,8 +51,6 @@ check "CRS refuses ?foo=/etc/passwd&bar=/bin/sh" "$(tr -d '\r\n' < "$o")" 403
 o=$(out_of "sign.ts curl https://example.com/agents/hello")
 check "signed by the test bot, HTTP/1.1" "$(sed -n 1p "$o")" 200
 check "signed by the test bot, HTTP/2" "$(sed -n 2p "$o")" 200
-o=$(out_of "sign.ts curl http://example.com/agents/hello")
-check "signed, over plain HTTP (the guard)" "$(tr -d '\r\n' < "$o")" 400
 o=$(out_of "Host: other.example")
 check "a name this server does not serve (the catch-all)" "$(tr -d '\r\n' < "$o")" 421
 o=$(out_of "runuser -u www-data")
@@ -215,8 +222,6 @@ check "  ... wba.log: not verified" "${r% *}" "GET invalid/bad-signature"
 n=$(wba_lines)
 check "signed for other.example and sent as other.example: the catch-all" \
   "$(lb "bun wba-keysync/sign.ts curl https://example.com/ --dir ~/wba-test --insecure --host other.example | sh")" 421
-check "  ... never reached ModSecurity (no new wba.log line)" "$(wba_lines)" "$n"
-check "signed, straight to nginx's port 80 (no load balancer, so no X-Forwarded-Proto): the guard" \
-  "$(machine "bun wba-keysync/sign.ts curl http://example.com/agents/hello --dir ~/wba-test | sh")" 400
+check "  ... never reached ModSecurity (no new wba.log line)" "$(sleep 1; wba_lines)" "$n"
 
 finish "GETTING STARTED WORKS AS WRITTEN" "GETTING STARTED FAILED"

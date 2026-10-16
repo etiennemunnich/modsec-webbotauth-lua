@@ -8,8 +8,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import {
-  assignSlots, checkRules, CLAIM_RULE, CONF, DATA, dataLine, generate, LOCAL_RANGES, MAX_SLOTS, normalise, OLD_CONF, overlaps, RULE_BASE,
+  allowedUrl, assignSlots, checkRules, CLAIM_RULE, CONF, DATA, dataLine, generate, LOCAL_RANGES, MAX_SLOTS, normalise, OLD_CONF, overlaps, RULE_BASE,
   runLists, VER, versionOf, type ListVersion,
 } from "./lists.ts";
 import { forbiddenAddress } from "./keysync.ts";
@@ -334,7 +335,7 @@ test("runLists: the after file an older lists.ts wrote is removed with the new w
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("runLists: a bad file writes nothing; a private host is refused unless named with --allow-private-origin", async () => {
+test("runLists: a bad file writes nothing; a private host is refused unless its list's exact URL is named with --allow-private-url", async () => {
   const dir = mkdtempSync(join(tmpdir(), "wba-lists-"));
   try {
     const bad = await run(dir, {}, { bots: [{ name: "a", user_agent: "ABot", policy: "block" as Bot["policy"] }] });
@@ -346,9 +347,53 @@ test("runLists: a bad file writes nothing; a private host is refused unless name
     const local = { bots: [BOTS[0]], resolve: async () => ["127.0.0.1"] };
     const refused = await run(dir, { [G]: { body: LIST(["192.0.2.0/24"]) } }, local);
     assert.match(refused.out, /none  gbot: g\.example resolves to 127\.0\.0\.1, a private, loopback or link-local address/);
-    const allowed = await run(dir, { [G]: { body: LIST(["192.0.2.0/24"]) } }, { ...local, allow: new Set(["https://g.example"]) });
+    const allowed = await run(dir, { [G]: { body: LIST(["192.0.2.0/24"]) } }, { ...local, allow: new Set([allowedUrl(G)!]) });
     assert.equal(allowed.code, 0, allowed.out);
-    assert.match(allowed.out, /WARN  gbot: https:\/\/g\.example fetched without the private-address check/);
+    assert.match(allowed.out, /WARN  gbot: https:\/\/g\.example\/ips\.json fetched without the private-address check \(--allow-private-url\)/);
+    // The URL names one list: another list on the same host, which a bots file from elsewhere could name, is still refused.
+    const O = "https://g.example/other.json";
+    const other = await run(dir, { [G]: { body: LIST(["192.0.2.0/24"]) }, [O]: { body: LIST(["198.51.100.0/24"]) } },
+      { ...local, bots: [BOTS[0], { name: "obot", user_agent: "OBot", ips: O }], allow: new Set([allowedUrl(G)!]) });
+    assert.equal(other.code, 2, other.out);
+    assert.match(other.out, /none  obot: g\.example resolves to 127\.0\.0\.1, a private, loopback or link-local address/);
+    assert.ok(!existsSync(join(dir, DATA, "obot.data")));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("allowedUrl: one list's exact https URL; never an origin, another scheme, userinfo, a fragment or a space", () => {
+  assert.equal(allowedUrl("https://localhost:19445/listbot.json"), "https://localhost:19445/listbot.json");
+  assert.equal(allowedUrl("https://g.example:443/ips.json?v=1"), "https://g.example/ips.json?v=1", "written as the URL parser writes it");
+  assert.equal(allowedUrl("https://g.example/?list"), "https://g.example/?list");
+  for (const bad of ["https://g.example", "https://g.example/", "http://g.example/ips.json", "https://u:p@g.example/ips.json",
+    "https://g.example/ips.json#x", "https://g.example/ips.json type=x", "g.example/ips.json", ""]) {
+    assert.equal(allowedUrl(bad), null, bad);
+  }
+});
+
+test("lists.ts: --allow-private-origin is refused, naming the flag lists.ts takes; --allow-private-url takes a list's URL, not an origin", () => {
+  const tool = fileURLToPath(new URL("./lists.ts", import.meta.url));
+  const run = (...args: string[]) => spawnSync(process.execPath, [tool, "bots.yaml", "--out", "/nonexistent", ...args], { encoding: "utf8" });
+  const old = run("--allow-private-origin", "https://localhost:19445");
+  assert.equal(old.status, 1);
+  assert.match(old.stderr, /--allow-private-origin is key sync's: lists\.ts excepts one list at a time, --allow-private-url https:\/\/host\[:port\]\/path\/to\/list/);
+  const origin = run("--allow-private-url", "https://localhost:19445");
+  assert.equal(origin.status, 1);
+  assert.match(origin.stderr, /--allow-private-url: "https:\/\/localhost:19445": the exact https URL of one list/);
+});
+
+test("runLists: a name that is not a string (YAML reads name: 360 as a number), or the reserved name tokens, writes nothing", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "wba-lists-"));
+  try {
+    for (const [name, why] of [[360, /FAIL  #1: name: name 360 is not a string: quote it/], [true, /FAIL  #1: name: name true is not a string/],
+      ["tokens", /FAIL  tokens: name: name "tokens" is reserved: lists\.ts writes its own tokens\.data beside each bot's <name>\.data/]] as [unknown, RegExp][]) {
+      const r = await run(dir, { [G]: { body: LIST(["192.0.2.0/24"]) } }, { bots: [{ name: name as string, user_agent: "XBot", ips: G }] });
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.out, why);
+      assert.ok(!existsSync(join(dir, CONF)) && !existsSync(join(dir, DATA)), `${String(name)}: nothing written`);
+    }
+    const nl = await run(dir, {}, { bots: [{ name: "x\nFAIL  forged", user_agent: "XBot" }] });
+    assert.equal(nl.code, 1);
+    assert.doesNotMatch(nl.out, /\nFAIL  forged/, "a name cannot add a line of its own to the output");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

@@ -4,4 +4,4 @@ blank_issues_enabled: false
 contact_links:
   - name: Security problem
     url: https://github.com/etiennemunnich/modsec-webbotauth-lua/blob/main/SECURITY.md
-    about: Tell Etienne privately, never in an issue.
+    about: Report it privately, never in an issue. SECURITY.md says how.

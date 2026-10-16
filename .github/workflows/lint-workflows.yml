@@ -1,0 +1,57 @@
+# The workflow files themselves: actionlint (correctness) and zizmor
+# (security; CRS runs it too, see coreruleset/coreruleset .github/zizmor.yml).
+# Only when something under .github/ changes (the files they read), or by
+# hand. A pull request from a branch here is skipped: that branch's push run
+# checks the same files.
+name: lint-workflows
+
+on:
+  push:
+    paths:
+      - .github/**
+  pull_request:
+    paths:
+      - .github/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # One job, two checks of about ten seconds each: GitHub bills every job by
+  # the minute, rounded up.
+  workflow-files:
+    name: Workflow files (actionlint, zizmor)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # actionlint catches what Checkov does not: expression and type errors,
+      # unknown contexts, and shellcheck on every run: block. Pinned by SHA-256.
+      - name: Install actionlint 1.7.12
+        run: |
+          curl -fsSL --retry 3 --max-time 60 -o /tmp/actionlint.tgz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tgz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
+      - name: actionlint
+        run: /tmp/actionlint -color
+      # zizmor: template injection, credentials left in .git/config, unpinned
+      # or impostor actions, dangerous triggers. The action installs zizmor
+      # from a hash-locked wheel; any finding fails the job and shows as an
+      # annotation. (Code scanning upload is off: a private repository on
+      # GitHub Free has none.) Dependabot bumps the action; the zizmor
+      # version below is bumped by hand. It runs even if actionlint failed.
+      - name: zizmor
+        if: ${{ !cancelled() }}
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          version: 1.30.1
+          advanced-security: false
+          annotations: true

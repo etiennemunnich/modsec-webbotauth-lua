@@ -1,8 +1,10 @@
 # Signature-Agent URLs this site recognises, one per line; "#" starts a
 # comment line. Write it by hand, or from your bots.yaml:
 #   bun wba-keysync/agents.ts bots.yaml --out agents.txt
-# Only these are ever fetched, and only their keys can ever
-# produce tx.wba_status=verified.
+# Key sync fetches these URLs, plus the jwks_uri that a listed CIMD
+# document names (its server chooses that one), and only keys from them
+# can ever produce tx.wba_status=verified. A line key sync cannot parse
+# stops the run before any fetch, and the key store is left as it was.
 #
 #   https://host[:port]                     a key directory (the default type):
 #                                           wba-keysync fetches

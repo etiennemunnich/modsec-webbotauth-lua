@@ -5,7 +5,7 @@
 // deny, log) act on that. Run it from cron; the WAF reads the result when it
 // starts or reloads, so no request ever waits on a fetch.
 //
-//   bun wba-keysync/lists.ts bots.yaml --out DIR [--allow-private-origin URL]...
+//   bun wba-keysync/lists.ts bots.yaml --out DIR [--allow-private-url URL]...
 //                            [--check 'nginx -t' [--reload 'nginx -s reload']]
 //
 // DIR receives:
@@ -43,6 +43,12 @@
 // "no-list", which no policy refuses as an impostor. Files are written under
 // new names and renamed into place, data first and the rules last.
 //
+// --allow-private-url URL, repeatable: a list on a private, loopback or
+// link-local address is refused, unless its exact URL is named here (your own
+// list on your own network, or a test server); each such fetch is reported.
+// It names one list, not a host, so a bots file from elsewhere cannot use it
+// to reach any other path on that host.
+//
 // With --check the command is run after writing (through sh); if it fails,
 // every file goes back to what it was. With --reload it is run after a check
 // that passed; if the reload fails, the files go back too, so what is on disk
@@ -59,7 +65,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
-import { allowedOrigin, guardAddress, parseAgent, resolveHost, writeAtomic, type FetchLike, type Resolver } from "./keysync.ts";
+import { guardAddress, parseAgent, printable, resolveHost, writeAtomic, type FetchLike, type Resolver } from "./keysync.ts";
 import { checkEntries, extractCidrs, fetchList, formatCidr, MIN_V4_BITS, MIN_V6_BITS, parseCidr, type Bot, type Cidr } from "./validate.ts";
 
 export const CONF = "web-bot-auth-bots-before.conf";
@@ -143,6 +149,19 @@ export function versionOf(lines: string[], creationTimes: (string | null)[], url
     ranges: lines.length, ipv4: lines.length - ipv6, ipv6, urls, fetched: at.toISOString(),
     changed: previous?.sha256 === sha256 ? previous.changed : at.toISOString(),
   };
+}
+
+/**
+ * The list URL named by --allow-private-url, normalised as the URL parser
+ * writes it, or null unless it is an https URL with a path or query, no
+ * userinfo and no fragment: one list, never a whole host.
+ */
+export function allowedUrl(value: string): string | null {
+  let u: URL;
+  try { u = new URL(value); } catch { return null; }
+  if (u.protocol !== "https:" || u.username !== "" || u.password !== "" || u.hash !== "" || /\s/.test(value)) return null;
+  if (u.pathname === "/" && u.search === "") return null; // an origin: it would cover every list on the host
+  return u.href;
 }
 
 /** Each bot's slot: kept from the last run; a new bot takes the lowest slot never used. A removed bot's slot is not reused. */
@@ -277,7 +296,7 @@ export async function runLists(o: RunOptions): Promise<number> {
   const log = o.log ?? ((l: string) => console.log(l));
   const at = o.at ?? new Date();
   const problems = [
-    ...checkEntries(o.bots).filter((f) => f.level === "fail").map((f) => `${f.bot}: ${f.check}: ${f.detail}`),
+    ...checkEntries(o.bots).filter((f) => f.level === "fail").map((f) => printable(`${f.bot}: ${f.check}: ${f.detail}`)), // a bad name is printed as it is labelled
     ...checkRules(o.bots, o.mode),
   ];
   if (problems.length) { for (const p of problems) log(`FAIL  ${p}`); log(`== ${o.source}: nothing written`); return 1; }
@@ -299,7 +318,7 @@ export async function runLists(o: RunOptions): Promise<number> {
     try {
       const cidrs: Cidr[] = [], times: (string | null)[] = [];
       for (const url of urls) {
-        if (allow.has(new URL(url).origin)) log(`WARN  ${b.name}: ${new URL(url).origin} fetched without the private-address check (--allow-private-origin)`);
+        if (allow.has(new URL(url).href)) log(`WARN  ${b.name}: ${new URL(url).href} fetched without the private-address check (--allow-private-url)`);
         else await guardAddress(url, resolve);
         const { doc } = await fetchList(url, fetchImpl);
         cidrs.push(...extractCidrs(doc));
@@ -311,7 +330,7 @@ export async function runLists(o: RunOptions): Promise<number> {
       results.push({ name: b.name, list: "fetched", version: v.version });
       log(`ok    ${b.name}: ${v.ranges} ranges (${v.ipv4} IPv4, ${v.ipv6} IPv6), version ${v.version}${previous[b.name] && previous[b.name].sha256 !== v.sha256 ? `, was ${previous[b.name].version}` : ""}`);
     } catch (e) {
-      const error = (e as Error).message.replace(/[\x00-\x1f\x7f]/g, " "); // eslint-disable-line no-control-regex -- strips control characters from an error before logging it
+      const error = printable((e as Error).message);
       const kept = previous[b.name];
       if (kept && existsSync(join(dataDir, `${b.name}.data`))) {
         versions[b.name] = kept; lists.set(b.name, kept);
@@ -372,7 +391,7 @@ export async function runLists(o: RunOptions): Promise<number> {
 }
 
 function usage(msg: string): never {
-  console.error(`${msg}\nusage: bun wba-keysync/lists.ts bots.yaml --out DIR [--allow-private-origin URL]... [--check CMD [--reload CMD]]`);
+  console.error(`${msg}\nusage: bun wba-keysync/lists.ts bots.yaml --out DIR [--allow-private-url URL]... [--check CMD [--reload CMD]]`);
   process.exit(1);
 }
 
@@ -384,10 +403,12 @@ async function main(argv: string[]): Promise<number> {
     if (a === "--out") out = value();
     else if (a === "--check") check = value();
     else if (a === "--reload") reload = value();
-    else if (a === "--allow-private-origin") {
-      const origin = allowedOrigin(value());
-      if (!origin) usage(`--allow-private-origin: ${argv[i]}: an https origin, no path`);
-      allow.add(origin);
+    else if (a === "--allow-private-url") {
+      const url = allowedUrl(value());
+      if (!url) usage(`--allow-private-url: ${JSON.stringify(argv[i])}: the exact https URL of one list (https://host[:port]/path), not an origin`);
+      allow.add(url);
+    } else if (a === "--allow-private-origin") {
+      usage("--allow-private-origin is key sync's: lists.ts excepts one list at a time, --allow-private-url https://host[:port]/path/to/list");
     } else if (a.startsWith("--")) usage(`unknown option ${a}`);
     else if (file === undefined) file = a;
     else usage(`one bots file only (${file}, ${a})`);

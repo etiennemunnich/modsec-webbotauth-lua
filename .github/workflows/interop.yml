@@ -1,0 +1,42 @@
+# Interop: the verifier against the LATEST upstream (lua/tests/interop/interop.sh):
+# the WG draft's test vectors from the editor's copy on main, Cloudflare's npm
+# package web-bot-auth (the reference implementation) installed fresh each
+# run, and Stytch's example recipe. Operators own the scheduled check of their
+# own WAF (interop.sh with TARGET and LOGS; README, "Check your deployment
+# against the latest upstream"); this copy is the project's development check,
+# run by hand before a release. Not hermetic by design, so it never gates a
+# push. It uses the runner's Docker; the CLI makes no difference to what it
+# tests, and the live suites already prove Finch and Docker (wba.yml).
+name: interop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  latest:
+    name: Verifier vs latest draft vectors, web-bot-auth and Stytch's recipe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.11
+      - name: Lua and openssl (the draft vectors run through verify.lua on the host)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends lua5.4 openssl
+      - name: Interop suite
+        env:
+          DOCKER: docker
+          LUA: lua5.4
+          # Read-only token, only to read Stytch's file without the API's anonymous rate limit.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash lua/tests/interop/interop.sh

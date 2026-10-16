@@ -439,9 +439,9 @@ end
 ---   policy.replay_keys, basehash (hex: SHA-512's first 256 bits of the
 ---   signature base where hash has sha-512, else SHA-256), noncehash (hex
 ---   SHA-256 of the nonce) when it has one, and replay: { basehash, noncehash,
----   last (the last second a signature over that base can verify) } for
----   EVERY verified signature in the request, so each one is counted, not
----   only the one reported }
+---   expires (the signature's own, which names its counter) } for EVERY
+---   verified signature in the request, so each one is counted, not only the
+---   one reported }
 function M.verify(req, store, now, crypto_verify, policy, hash)
     hash = hash or { ["sha-256"] = sha256.digest }
     local pol = {}
@@ -531,14 +531,14 @@ function M.verify(req, store, now, crypto_verify, policy, hash)
             agents[#agents + 1] = r.agent
         end
         if r.status == "verified" and pol.replay_keys then
-            -- The last second any signature over this base can verify:
-            -- expires (plus grace), or created plus max_age when sooner. The
-            -- counter is named by it, so sweep.ts removes it then, and the
-            -- store holds at most max_age of verified traffic (an hour by
-            -- default) rather than up to a day.
-            local last = r.expires + (pol.expiry_grace or 0)
-            if pol.max_age and r.created + pol.max_age < last then last = r.created + pol.max_age end
-            replay[#replay + 1] = { basehash = r.basehash, noncehash = r.noncehash, last = last }
+            -- The counter is named by the signature's own expires, never by
+            -- this request's policy: with the grace or max_age in the name,
+            -- the same statement under another server block's settings got
+            -- a fresh counter and read uses=1 (review 2026-10-12, finding
+            -- 2). sweep.ts removes the file after expires, or once it has
+            -- gone unused for its --max-window, whichever comes first, so the
+            -- store still holds about an hour of traffic (replay.lua).
+            replay[#replay + 1] = { basehash = r.basehash, noncehash = r.noncehash, expires = r.expires }
         end
     end
     if best.status == "verified" then

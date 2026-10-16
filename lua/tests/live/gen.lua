@@ -113,7 +113,7 @@ local function case(name, o)
     local cmd = "curl -s -o /dev/null -D '" .. OUT .. "/" .. name .. ".hdr' --max-time 5 --path-as-is -w '%{http_code} %{http_version}' -H 'X-WBA-Test: " .. name .. "'"
     if o.target then cmd = cmd .. " --request-target '" .. o.target .. "'" end
     if o.method then cmd = cmd .. " -X '" .. o.method .. "'" end
-    -- TLS by default (draft 6.1: signed requests over cleartext are refused);
+    -- TLS by default, like a real site;
     -- o.h2 negotiates HTTP/2 (curl sends Host as :authority); o.cleartext
     -- uses the plain port.
     if o.h2 then cmd = cmd .. " --http2 -k" elseif not o.cleartext then cmd = cmd .. " --http1.1 -k" end
@@ -129,8 +129,8 @@ local function case(name, o)
     local p = io.popen(cmd .. " '" .. url .. (o.path or "/") .. "'")
     local code = p:read("a")
     p:close()
-    -- "<case> <HTTP status> <HTTP version>": run.sh reads the status for cases
-    -- nginx answers itself, and the version to prove a case went over HTTP/2.
+    -- "<case> <HTTP status> <HTTP version>": run.sh reads the status the case
+    -- got, and the version to prove a case went over HTTP/2.
     print(name .. " " .. code)
 end
 
@@ -149,9 +149,14 @@ case("host-default-port", { host = "example.com:443" })
 case("eight-sig-headers", { extra = { "Signature: j1=:AAAA:", "Signature: j2=:AAAA:", "Signature: j3=:AAAA:",
     "Signature: j4=:AAAA:", "Signature: j5=:AAAA:", "Signature: j6=:AAAA:", "Signature: j7=:AAAA:" } })
 case("unsigned", { unsigned = true })
--- Draft 6.1: signed over cleartext is refused by nginx; unsigned still flows.
+-- Plain HTTP: ModSecurity cannot see whether the client used TLS, so a signed
+-- request verifies the same as over HTTPS.
 case("cleartext-signed", { cleartext = true })
 case("cleartext-unsigned", { cleartext = true, unsigned = true })
+-- Over plain HTTP, a signature that covers @scheme as "http" does not verify:
+-- the verifier rebuilds the site's scheme, https.
+case("cleartext-scheme", { cleartext = true, components = '"@scheme" "@authority" "signature-agent";key="agent1"',
+    lines = { '"@scheme": http', '"@authority": example.com', AGENT_LINE } })
 -- Draft 4.3: no Signature-Agent; the key is held, so the request verifies
 -- and names no directory.
 case("url-less", { components = '"@authority"', lines = { '"@authority": example.com' },
@@ -175,14 +180,14 @@ case("absform-query-attack", { target = "http://example.com?evil=1",
     components = '"@authority" "@query" "signature-agent";key="agent1"',
     lines = { '"@authority": example.com', '"@query": ?', AGENT_LINE } })
 case("absform-host-attack", { target = "http://other.example/" })
--- Request lines nginx accepts that a narrow guard regex would miss:
--- extra SP before the target, and methods containing '-' or '_'.
+-- Request lines nginx also accepts: extra SP before the target, and methods
+-- containing "-" or "_".
 case("absform-host-2sp", { target = " http://other.example/" })
 case("absform-host-msearch", { target = "http://other.example/", method = "M-SEARCH" })
 case("absform-host-underscore", { target = "http://other.example/", method = "X_FOO" })
 case("absform-unsigned", { unsigned = true, target = "http://example.com/" })
 -- The signed spellings above, unsigned: nginx accepts each request line and
--- hands it to ModSecurity, so the 400s above are the guard's alone.
+-- hands it to ModSecurity.
 case("absform-query-unsigned", { unsigned = true, target = "http://example.com?evil=1" })
 case("absform-host-unsigned", { unsigned = true, target = "http://other.example/" })
 case("absform-2sp-unsigned", { unsigned = true, target = " http://other.example/" })
@@ -191,6 +196,11 @@ case("absform-underscore-unsigned", { unsigned = true, target = "http://other.ex
 -- Absolute-form signed correctly: RFC 9112 3.2.2 says the server MUST accept
 -- the form and use the request-target's authority.
 case("absform-matching", { target = "http://example.com/" })
+-- @request-target signed as the full URL: the verifier builds it from what
+-- nginx passes ("/x"), so the signature does not match.
+case("absform-request-target", { target = "http://example.com/x", path = "/x",
+    components = '"@request-target" "@authority" "signature-agent";key="agent1"',
+    lines = { '"@request-target": http://example.com/x', '"@authority": example.com', AGENT_LINE } })
 case("absform-query-legit", { target = "http://example.com?evil=1",
     components = '"@authority" "@query" "signature-agent";key="agent1"',
     lines = { '"@authority": example.com', '"@query": ?evil=1', AGENT_LINE } })
@@ -206,8 +216,8 @@ case("tampered-h2", { h2 = true, host = "evil.example" })
 -- miss. B: a User-Agent claiming ExampleBot must be verified for its directory.
 case("recipe-agents-unsigned", { unsigned = true, path = "/agents/x" })
 case("recipe-agents-verified", { path = "/agents/x" })
-case("recipe-agents-dot", { unsigned = true, path = "/./agents/x" }) -- "..": CRS 930xxx refuses it first
-case("recipe-agents-dotdot", { unsigned = true, path = "/x/../agents/x" })
+case("recipe-agents-dot", { unsigned = true, path = "/./agents/x" })
+case("recipe-agents-dotdot", { unsigned = true, path = "/x/../agents/x" }) -- "..": CRS 930xxx refuses it first
 case("recipe-agents-slashes", { unsigned = true, path = "//agents/x" })
 case("recipe-agents-case", { unsigned = true, path = "/AGENTS/x" })
 case("recipe-agents-encoded", { unsigned = true, path = "/%61gents/x" })
@@ -414,4 +424,5 @@ case("keystore-unavailable", {})           -- run.sh: a container with no key st
 body_case("digest-malformed", { body = HELLO, value = "sha-256=:not base64!:" })
 body_case("digest-md5-only", { body = HELLO, value = "md5=:XUFAKrxLKna5cZ2REBfFkg==:" })
 
-H.done("gen")
+-- PRINT=1 output is header lines (h2.ts and run.sh forward them): no summary line.
+if os.getenv("PRINT") then H.cleanup() else H.done("gen") end

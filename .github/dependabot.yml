@@ -1,0 +1,20 @@
+# Keeps the SHA-pinned actions current: one grouped pull request a month, run
+# through CI (each such pull request spends about 25 runner-minutes, so not
+# weekly while the account's minutes are tight).
+# Not covered: the CRS base image (lua/wba/Dockerfile pins it in an ARG, which
+# Dependabot does not read), Finch (.github/scripts/install-finch.sh), go-ftw
+# (.github/scripts/install-go-ftw.sh), ASH (.github/workflows/security.yml) and
+# Bun (bun-version in the workflows); those are bumped by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # Wait a week before taking a new release: a compromised or broken one is
+    # usually caught and pulled within days.
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]

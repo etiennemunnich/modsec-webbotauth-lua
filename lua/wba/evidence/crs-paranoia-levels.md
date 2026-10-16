@@ -1,4 +1,6 @@
-# CRS and signed requests: evidence
+# CRS paranoia levels and signed requests: evidence
+
+CRS's paranoia level (PL) sets how strict its rules are, from 1, the default, to 4. Each case below is one signed request: the response, the request as ModSecurity recorded it, and the CRS rules it matched. The first two show a false positive at PL 1, and so at every level: rule 941120, an XSS rule, reads a digit, `/` or `+` followed by `on`, letters and `=` as an HTML event handler such as `onload=`. About 1 in 2,000 random 32-byte values in padded base64, such as a 32-byte nonce or a sha-256 `Content-Digest`, match it. The exclusion for it is in the [README](../README.md#crs-paranoia-levels). The last three pass at PL 4 over HTTP/1.1 and HTTP/2, because `wba.conf` exempts `Signature-Input`, `Signature` and `Signature-Agent` from rule 920274, and from that rule only, whatever the case of the header names.
 
 Captured 2026-10-11T08:36Z by `lua/tests/live/crs-evidence.sh` against the image built from `lua/wba/Dockerfile`:
 
@@ -9,6 +11,8 @@ Captured 2026-10-11T08:36Z by `lua/tests/live/crs-evidence.sh` against the image
 - base image: `owasp/modsecurity-crs:4.30.0-nginx-202610051210@sha256:133267aa811e1a57a23b52ef04b3c30e802bcbe5454588f6d6af1f69f4b2b667`
 
 The backend is a dead port: 502 means the request passed every rule. CRS's outbound threshold is raised so the 502 itself cannot be refused.
+
+Rerun (Finch; `DOCKER=docker` for Docker): `bash lua/tests/live/crs-evidence.sh > lua/wba/evidence/crs-paranoia-levels.md`. Timestamps and signatures differ on every run.
 
 ## PL1, HTTP/1.1, case `pl-nonce-b64-32`
 

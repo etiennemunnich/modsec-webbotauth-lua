@@ -4,7 +4,15 @@ labels: ["alpha-feedback", "bug"]
 body:
   - type: markdown
     attributes:
-      value: "For a security problem, do not use this form: see SECURITY.md."
+      value: "For a security problem, do not use this form: see [SECURITY.md](https://github.com/etiennemunnich/modsec-webbotauth-lua/blob/main/SECURITY.md)."
+  - type: input
+    id: version
+    attributes:
+      label: Which version?
+      description: The release tag, or the commit you built from (git rev-parse --short HEAD).
+      placeholder: v0.1.0-alpha.1
+    validations:
+      required: true
   - type: dropdown
     id: area
     attributes:
@@ -12,7 +20,8 @@ body:
       options:
         - Building the image
         - Quick start
-        - wba-keysync (key sync, validate, report, sign, sweep)
+        - Installing on Debian 13 (GETTING-STARTED.md)
+        - wba-keysync (key sync, validate, agents, lists, robots, report, sign, sweep)
         - nginx or ModSecurity while running
         - Running the tests
         - Other
@@ -43,6 +52,6 @@ body:
     id: setup
     attributes:
       label: Your setup
-      description: Operating system, Finch or Docker and its version, Bun or Node and its version, CRS image tag.
+      description: Operating system, Finch or Docker and its version, Bun or Node and its version, CRS image tag (or a Debian 13 install without the image).
     validations:
       required: true

@@ -23,7 +23,7 @@ COMPLETED=0
 # Every check below prints one PASS line through pass(). A run that skips a
 # check, or loses one to a broken helper, ends with fewer and fails: change
 # this number only together with the checks.
-EXPECTED_PASSES=237
+EXPECTED_PASSES=231
 PASSES=0
 pass() { echo "PASS  $*"; PASSES=$((PASSES + 1)); }
 # Images this script builds are removed on exit (KEEP_IMAGES=1 keeps them):
@@ -39,9 +39,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "== test stage: Lua suites on the image's Lua 5.3, Wycheproof and crypto.lua mutants against the built lua-openssl"
+echo "== test stage: Lua suites on the image's Lua 5.3, Wycheproof and crypto.lua's planted bugs against the built lua-openssl"
 $DOCKER build --progress=plain --no-cache --target test ${CRS_IMAGE:+--build-arg CRS_IMAGE="$CRS_IMAGE"} -t crs-wba:test -f "$REPO/lua/wba/Dockerfile" "$REPO" 2>&1 \
-  | grep -E "checks passed|wycheproof |mutants killed|ERROR|FAIL" || { echo "FAIL  test stage"; exit 1; }
+  | grep -E "checks passed|wycheproof |planted bug caught|ERROR|FAIL" || { echo "FAIL  test stage"; exit 1; }
 
 echo "== build"
 $DOCKER build -q ${CRS_IMAGE:+--build-arg CRS_IMAGE="$CRS_IMAGE"} -f "$REPO/lua/wba/Dockerfile" -t crs-wba:live "$REPO" >/dev/null
@@ -89,7 +89,7 @@ expect() {
   local got; got=$(result "$1")
   if [ "$got" = "$2" ]; then pass "$1 -> $got"; else echo "FAIL  $1 -> ${got:-<no result>} (want $2)"; FAIL=1; fi
 }
-expect_http() { # for cases nginx answers before ModSecurity runs
+expect_http() { # case, status: sends the case again on its own and checks the HTTP status it gets
   local got; got=$(OUT=$WORK MODE=send PORT=$PORT CASE=$1 "$LUA" "$HERE/gen.lua" | awk -v c="$1" '$1 == c { print $2 }')
   if [ "$got" = "$2" ]; then pass "$1 -> HTTP $got"; else echo "FAIL  $1 -> HTTP ${got:-?} (want $2)"; FAIL=1; fi
 }
@@ -125,25 +125,23 @@ url_less_agent=$($DOCKER logs "$NAME" 2>&1 | grep -o "WBA-RESULT case=url-less [
 case "$url_less_agent" in *"agent=n/a keyid="?*) pass "url-less names no agent, only the keyid";;
   *) echo "FAIL  url-less tx vars: $url_less_agent"; FAIL=1;; esac
 expect orphan-label        invalid/orphan-label       # RFC 9421 4
-expect cleartext-unsigned  not-signed/no-signature    # cleartext without a signature still flows
-expect_http cleartext-signed 400                      # draft 6.1: signed over cleartext refused by nginx
-got=$(result cleartext-signed)
-[ -z "$got" ] && pass "cleartext-signed -> never reached ModSecurity" || { echo "FAIL  cleartext-signed reached ModSecurity: $got"; FAIL=1; }
+expect cleartext-unsigned  not-signed/no-signature    # plain HTTP without a signature
+expect cleartext-signed    verified/                  # plain HTTP: ModSecurity cannot see TLS (draft 6.1 not met, CONFORMANCE.md)
+expect cleartext-scheme    invalid/bad-signature      # @scheme signed as http: the verifier uses https
 expect signed-googlebot-ua verified/
-expect_http absform-query-attack     400  # nginx guard: signed non-origin-form target refused
-expect_http absform-host-attack      400  # (without it: request-line host other.example, Host example.com -> verified)
-expect_http absform-host-2sp         400  # "GET  http://..." (nginx accepts extra SP)
-expect_http absform-host-msearch     400  # method with "-"
-expect_http absform-host-underscore  400  # method with "_"
-expect_http absform-matching         400  # correctly signed, but refused: the one RFC 9112 deviation (README)
-expect_http absform-query-legit      400  # likewise
-for c in absform-query-attack absform-host-attack absform-host-2sp absform-host-msearch absform-host-underscore absform-matching absform-query-legit; do
-  got=$(result "$c") # the 400 must come from the guard: ModSecurity never saw the request
-  [ -z "$got" ] && pass "$c -> never reached ModSecurity" || { echo "FAIL  $c reached ModSecurity: $got"; FAIL=1; }
-done
-# Each spelling above, unsigned: nginx's own parser accepts it and hands it to
-# ModSecurity, which the harness answers with 403 (rule 9534900). So the 400s
-# above are the guard's, not nginx refusing the request line.
+# A full URL in the request line: nginx hands ModSecurity only what follows the
+# host, and serves the request-line host. @path and @query exist only for a
+# target that starts with "/".
+expect absform-query-attack     invalid/missing-component  # "?evil=1": the signed @query is unavailable
+expect absform-host-attack      verified/  # known limit: signed for example.com, served as other.example (README)
+expect absform-host-2sp         verified/  # "GET  http://..." (nginx accepts extra SP)
+expect absform-host-msearch     verified/  # method with "-"
+expect absform-host-underscore  verified/  # method with "_"
+expect absform-matching         verified/  # RFC 9112 3.2.2: absolute-form accepted
+expect absform-request-target   invalid/bad-signature      # @request-target signed as the full URL; built here as "/x"
+expect absform-query-legit      invalid/missing-component  # no path, so @query is unavailable here too
+# Each spelling above, unsigned: nginx accepts it and hands it to ModSecurity,
+# which the harness answers with 403 (rule 9534900).
 for c in absform-unsigned absform-query-unsigned absform-host-unsigned absform-2sp-unsigned \
          absform-msearch-unsigned absform-underscore-unsigned; do
   expect_http "$c" 403; sleep 1
@@ -225,8 +223,8 @@ WIN='"created":[0-9]+,"expires":[0-9]+'
 expect_wba agent-proof '"status":"verified","reason":"","agent":"https://proof\.example/\.well-known/http-message-signatures-directory","agent_proof":"valid",'
 expect_wba verified "\"status\":\"verified\",\"reason\":\"\",\"agent\":\"$DIR\",\"agent_proof\":\"none\",\"keyid\":\"[A-Za-z0-9_-]{43}\",\"label\":\"sig1\",$WIN,\"granted\":false,\"sighash\":\"[0-9a-f]{64}\",\"uses\":null,\"nonce_uses\":null,\"covered\":\"@authority signature-agent\"\}$"
 expect_wba url-less "\"status\":\"verified\",\"reason\":\"url-less\",\"agent\":null,\"agent_proof\":null,\"keyid\":\"[A-Za-z0-9_-]{43}\",\"label\":\"sig1\",$WIN,\"granted\":false,\"sighash\":\"[0-9a-f]{64}\",\"uses\":null,\"nonce_uses\":null,\"covered\":\"@authority\"\}$"
-expect_wba tampered-host '"status":"invalid","reason":"foreign-authority","agent":null,"agent_proof":null,"keyid":null,"label":null,"created":null,"expires":null,"granted":false,"sighash":null,"uses":null,"nonce_uses":null,"covered":null\}$'
-expect_wba verified '^\{"event":"web-bot-auth","time":[0-9]+,"unique_id":"[^"]+","client_ip":"[^"]+","method":"GET","uri":"/",'
+expect_wba tampered-host '"host":"evil\.example","status":"invalid","reason":"foreign-authority","agent":null,"agent_proof":null,"keyid":null,"label":null,"created":null,"expires":null,"granted":false,"sighash":null,"uses":null,"nonce_uses":null,"covered":null\}$'
+expect_wba verified '^\{"event":"web-bot-auth","time":[0-9]+,"unique_id":"[^"]+","client_ip":"[^"]+","method":"GET","uri":"/","host":"example\.com","status":'
 expect_wba unsigned ""
 lines=$($DOCKER logs "$NAME" 2>&1 | grep -cF '{"event":"web-bot-auth"' || true)
 long=$($DOCKER logs "$NAME" 2>&1 | grep -F '{"event":"web-bot-auth"' | grep -cE '[A-Za-z0-9+/]{80,}' || true)

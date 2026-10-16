@@ -17,6 +17,8 @@ function layout() {
   put(`s.${NOW - 1000}.${HEX("a")}`);                // expired long ago: removed
   put(`s.${NOW - 200}.${HEX("b")}`);                 // expired, still inside the 300 s margin: kept
   put(`s.${NOW + 600}.${HEX("c")}`);                 // not expired: kept
+  put(`s.${NOW + 31_536_000}.${HEX("7")}`, NOW - 86400 - 301); // expires in a year, unused for longer than window + skew: removed
+  put(`s.${NOW + 31_536_000}.${HEX("8")}`, NOW - 86400 - 299); // expires in a year, unused just inside it: kept
   put(`n.${HEX("d")}`, NOW - 86400 - 301);           // unused for longer than window + skew: removed
   put(`n.${HEX("e")}`, NOW - 86400 - 299);           // just inside: kept
   put(`s.1.${HEX("f").toUpperCase()}`);              // not lowercase hex: ignored
@@ -31,17 +33,21 @@ function layout() {
   return { dir, outside, target };
 }
 
-test("sweep: removes expired statements and long-unused nonces, nothing else", () => {
+test("sweep: removes expired statements and long-unused statements and nonces, nothing else", () => {
   const { dir, outside, target } = layout();
   try {
-    assert.deepEqual(sweep(dir, NOW), { removed: 2, kept: 3, ignored: 6 });
-    assert.equal(existsSync(join(dir, `s.${NOW - 1000}.${HEX("a")}`)), false);
-    assert.equal(existsSync(join(dir, `n.${HEX("d")}`)), false);
-    for (const kept of [`s.${NOW - 200}.${HEX("b")}`, `s.${NOW + 600}.${HEX("c")}`, `n.${HEX("e")}`, "notes.txt", `n.${HEX("1")}`]) {
+    assert.deepEqual(sweep(dir, NOW), { removed: 3, kept: 4, ignored: 6 });
+    // A statement's file is named by the bot's own expires, which can be far
+    // off: unused for longer than any signature counts, it goes all the same.
+    for (const gone of [`s.${NOW - 1000}.${HEX("a")}`, `s.${NOW + 31_536_000}.${HEX("7")}`, `n.${HEX("d")}`]) {
+      assert.equal(existsSync(join(dir, gone)), false, gone);
+    }
+    for (const kept of [`s.${NOW - 200}.${HEX("b")}`, `s.${NOW + 600}.${HEX("c")}`, `s.${NOW + 31_536_000}.${HEX("8")}`,
+      `n.${HEX("e")}`, "notes.txt", `n.${HEX("1")}`]) {
       assert.equal(existsSync(join(dir, kept)), true, kept);
     }
     assert.equal(readFileSync(target, "utf8"), "keep me", "a symlink's target is never touched");
-    assert.deepEqual(sweep(dir, NOW), { removed: 0, kept: 3, ignored: 6 }, "a second run removes nothing more");
+    assert.deepEqual(sweep(dir, NOW), { removed: 0, kept: 4, ignored: 6 }, "a second run removes nothing more");
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -51,8 +57,9 @@ test("sweep: removes expired statements and long-unused nonces, nothing else", (
 test("sweep: --max-window and --skew set the margins", () => {
   const { dir, outside } = layout();
   try {
-    // A 1-hour window: the nonce unused for a day goes too; skew 0 takes b.
-    assert.deepEqual(sweep(dir, NOW, 3600, 0), { removed: 4, kept: 1, ignored: 6 });
+    // A 1-hour window: the nonce and the statement unused for a day go too;
+    // skew 0 takes b.
+    assert.deepEqual(sweep(dir, NOW, 3600, 0), { removed: 6, kept: 1, ignored: 6 });
   } finally {
     rmSync(dir, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -76,10 +83,11 @@ test("sweep CLI: runs on a directory, refuses bad arguments with exit 1", () => 
   }
 });
 
-test("sweep: a nonce another sweeper removed after readdir is skipped, not fatal", () => {
+test("sweep: a counter another sweeper removed after readdir is skipped, not fatal", () => {
   const dir = mkdtempSync(join(tmpdir(), "wba-sweep-race-"));
   try {
     writeFileSync(join(dir, `n.${HEX("a")}`), "x");
+    writeFileSync(join(dir, `s.${NOW + 600}.${HEX("b")}`), "x"); // not expired: its use time is read too
     const gone = () => { throw Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" }); };
     const r = sweep(dir, NOW, 86400, 300, { lstatSync: gone as never, unlinkSync: () => assert.fail("nothing to unlink") });
     assert.deepEqual(r, { removed: 0, kept: 0, ignored: 0 });

@@ -141,32 +141,27 @@ export const status = (e: Evidence): Status =>
 
 const STATUS_MEANING: Record<Status, string> = {
   verified: "its signature keys or IP list were fetched from the operator and are usable",
-  documented: `reverse DNS only: the operator documents the names; checking them takes a forward-confirmed DNS lookup, which this project does not do yet (planned: offline, never inside a request; see "Reverse DNS, and why not CRS's fake-bot plugin" above)`,
+  documented: `reverse DNS only: the operator documents the names; checking them takes a forward-confirmed DNS lookup, which this project does not do yet (planned: offline, never inside a request; see "Reverse DNS" above)`,
   "claim only": "a User-Agent token only, which anyone can send",
   unverified: "every source listed failed when checked",
 };
 const PROOF_MEANING: Record<Proof, string> = {
   signature: "signs its requests (Web Bot Auth) with keys from its own key directory",
   "ip-list": "its operator publishes the addresses it sends from",
-  rdns: "its operator documents the reverse-DNS names of its addresses (checking them needs a DNS lookup per request)",
+  rdns: "its operator documents the reverse-DNS names of its addresses (this project does not check them yet)",
   "user-agent": "a token in the User-Agent header",
 };
 
 /**
- * Why the catalogue's bots are not checked by reverse DNS inside requests,
- * and why the project does not build on CRS's fake-bot plugin (review of
- * 2026-10-11).
+ * Why the catalogue's bots are not checked by reverse DNS inside requests.
  */
 const RDNS_NOTE = [
-  "## Reverse DNS, and why not CRS's fake-bot plugin", "",
-  "CRS's fake-bot plugin checks a User-Agent claim for nine search bots with a reverse-then-forward DNS lookup inside each request. "
-  + "We reviewed it on 2026-10-11 and took another approach:", "",
-  "- The lookup blocks an nginx worker until DNS answers, and nothing is cached, so a slow or hostile reverse-DNS zone can stall the site.",
-  "- It checks none of today's AI crawlers. Their operators (OpenAI, Anthropic, Perplexity and others) publish IP lists, not reverse-DNS names.",
-  "- Its Googlebot check accepts any `.google.com` name, which includes the `google-proxy-*.google.com` hosts that ordinary users drive. Amazon documents only IP lists for its bots; its pages do not mention reverse DNS.", "",
-  "This project uses each operator's published IP list, compiled when the WAF starts, and Web Bot Auth signatures. "
-  + "Reverse DNS, for the few operators that publish nothing else (Yandex, Baidu), comes later: done offline and reviewed, never inside a request. "
-  + "The project neither depends on nor integrates with fake-bot.",
+  "## Reverse DNS", "",
+  "Some operators publish no IP list, only the reverse-DNS names of their crawlers (Baidu, Yandex, Kagi, Scientific Advisor). "
+  + "Checking such a claim takes a DNS lookup and a second lookup to confirm it, so this project does not do it inside a request: "
+  + "it uses each operator's published IP list, compiled when the WAF starts, and Web Bot Auth signatures. "
+  + "Reverse DNS is not built. When it is, it will run offline in the sync tool and be reviewed, never inside a request. "
+  + "This project does not use CRS's fake-bot plugin, which checks reverse DNS while the request waits.",
 ];
 
 /**

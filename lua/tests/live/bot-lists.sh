@@ -117,8 +117,8 @@ bots:
     ips: https://localhost:19449/nestbot.json
 EOF
 }
-ORIGINS=(--allow-private-origin https://localhost:19445 --allow-private-origin https://localhost:19446 --allow-private-origin https://localhost:19447
-  --allow-private-origin https://localhost:19449)
+ORIGINS=(--allow-private-url https://localhost:19445/listbot.json --allow-private-url https://localhost:19446/denybot.json
+  --allow-private-url https://localhost:19447/sharedbot.json --allow-private-url https://localhost:19449/nestbot.json)
 lists() { # lists [lists.ts options]: as an operator's cron runs it; prints the exit code
   local rc=0
   NODE_EXTRA_CA_CERTS="$W/tls/ca.pem" bun wba-keysync/lists.ts "$W/bots.yaml" --out "$W/out" "${ORIGINS[@]}" "$@" > "$W/lists.log" 2>&1 || rc=$?

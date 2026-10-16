@@ -54,7 +54,8 @@ if not is_root then -- root writes anyway
     H.eq(type(err), "string")
 end
 assert(H.sh(("chmod 0700 '%s'"):format(ro)))
-H.pass("a missing or read-only directory gives nil and the reason")
+H.pass(is_root and "a missing directory gives nil and the reason (read-only not checked: root writes there anyway)"
+    or "a missing or read-only directory gives nil and the reason")
 
 -- 4. Concurrency: 40 processes count the same signature at once. Each gets
 -- its own count, 1 to 40, none repeated, none lost.

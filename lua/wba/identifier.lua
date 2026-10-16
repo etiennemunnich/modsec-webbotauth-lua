@@ -35,7 +35,8 @@ directory() is stricter (5.5: the member value MUST be the ASCII
 serialization of an origin, RFC 6454 6.2, and a verifier MUST ignore anything
 else; "/" MAY be accepted): lowercase only, no path, query or fragment, no
 empty port, and in strict mode (a request's member) no explicit ":443". Not
-strict (an operator's allowlist): ":443" is normalized away.
+strict (agents.txt and the key store; tx.wba_grant_agents is strict on
+purpose, keys.lua): ":443" is normalized away.
 
 Pure Lua 5.3, no I/O. Lowercasing touches A-Z only, whatever the locale.
 --]]

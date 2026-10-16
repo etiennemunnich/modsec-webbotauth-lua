@@ -71,13 +71,12 @@ for pl in 1 2 3 4; do
     if [ "$got" = 502 ]; then echo "PASS  PL$pl $c (HTTP/2) -> passed every rule"
     else echo "FAIL  PL$pl $c (HTTP/2) -> HTTP $got (want 502)"; FAIL=1; fi
   done
-  # Signature-Agent URLs with percent-encoded characters (research note 28,
-  # 3c). CRS rule 920272 (PL3 and up) decodes %XX first (t:urlDecodeUni), then
-  # allows only printable ASCII other than "%" in any header: "~" (%7E) and a
-  # space (%20) pass, but "é" in UTF-8 (%C3%A9) and a literal "%" (%25) are
-  # refused. wba.conf exempts these headers from rule 920274 (PL4) only, not
-  # from 920272. Pinned as found: if it changes, update the README's CRS
-  # section and research note 28.
+  # Signature-Agent URLs with percent-encoded characters. CRS rule 920272
+  # (PL3 and up) decodes %XX first (t:urlDecodeUni), then allows only
+  # printable ASCII other than "%" in any header: "~" (%7E) and a space (%20)
+  # pass, but "é" in UTF-8 (%C3%A9) and a literal "%" (%25) are refused.
+  # wba.conf exempts these headers from rule 920274 (PL4) only, not from
+  # 920272. Pinned as found: if it changes, update the README's CRS section.
   for c in $PCT_CASES; do
     want=502 rule=""
     case "$pl:$c" in [34]:agent-pct-utf8|[34]:agent-pct-percent) want=403 rule=920272 ;; esac
@@ -98,7 +97,7 @@ for pl in 1 2 3 4; do
 
   if [ "$pl" = 4 ]; then
     # The exemption ignores letter case: the same request, its names in capitals
-    # (over TLS, like every signed request here: nginx refuses them in cleartext).
+    # (over TLS, like every signed request here).
     signed=$(OUT=$WORK MODE=send PRINT=1 CASE=verified "$LUA" "$HERE/gen.lua" | grep -iE '^signature(-input|-agent)?: ')
     upper=()
     while IFS= read -r h; do upper+=(-H "$(printf '%s' "${h%%:*}" | tr 'a-z' 'A-Z'):${h#*:}"); done <<<"$signed"

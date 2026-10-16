@@ -27,9 +27,9 @@ cleanup() {
 trap cleanup EXIT
 
 cat > "$WORK/lmdb.conf" <<'EOF'
-SecAction "id:9531900,phase:1,pass,nolog,t:none,initcol:resource=wba-probe"
-SecAction "id:9531901,phase:1,pass,nolog,t:none,setvar:resource.n=+1,expirevar:resource.n=600"
-SecRule REQUEST_HEADERS:X-Probe "@rx ^(.*)$" "id:9531902,phase:1,deny,status:403,log,t:none,capture,msg:'PROBE case=%{TX.1} n=%{resource.n}'"
+SecAction "id:9534980,phase:1,pass,nolog,t:none,initcol:resource=wba-probe"
+SecAction "id:9534981,phase:1,pass,nolog,t:none,setvar:resource.n=+1,expirevar:resource.n=600"
+SecRule REQUEST_HEADERS:X-Probe "@rx ^(.*)$" "id:9534982,phase:1,deny,status:403,log,t:none,capture,msg:'PROBE case=%{TX.1} n=%{resource.n}'"
 EOF
 cat > "$WORK/append.lua" <<'EOF'
 function main()
@@ -44,7 +44,7 @@ end
 EOF
 cat > "$WORK/append.conf" <<'EOF'
 SecRuleScript /etc/modsecurity.d/append.lua "id:9534990,phase:1,pass,nolog"
-SecRule REQUEST_HEADERS:X-Probe "@rx ^(.*)$" "id:9531911,phase:1,deny,status:403,log,t:none,capture,msg:'PROBE case=%{TX.1} n=%{tx.n}'"
+SecRule REQUEST_HEADERS:X-Probe "@rx ^(.*)$" "id:9534983,phase:1,deny,status:403,log,t:none,capture,msg:'PROBE case=%{TX.1} n=%{tx.n}'"
 EOF
 
 run() { # conf, extra run args...

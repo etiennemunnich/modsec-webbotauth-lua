@@ -1,0 +1,133 @@
+# Web Bot Auth for ModSecurity: every suite on every commit, once.
+# A push to main or to a branch runs it, and so does a pull request from a
+# fork. A pull request from a branch of this repository is skipped at the job
+# level: that branch's push run tested the same commit, and the pull request
+# shows that run. (A job skipped by its `if:` counts as passed for a required
+# check; a workflow that never starts leaves the check pending.)
+# A change only to files under paths-ignore runs nothing here: no test, script
+# or image build reads them (the scans and lints have security.yml and
+# lint-workflows.yml). lua/wba/README.md is not among them: run_all.sh checks
+# its recipes against recipes.conf and the live job runs its Quick start.
+# GETTING-STARTED.md is: getting-started.sh needs network and runs locally.
+# The host suites run through lua/tests/run_all.sh, so CI and a laptop run the
+# same thing. The container suites (the image's test stage, the live checks, the
+# README Quick start, the real-IP checks, the go-ftw tests, the CRS paranoia
+# levels) take the container CLI from $DOCKER and run twice: on Finch, the
+# scripts' default (its Ubuntu package, pinned in
+# .github/scripts/install-finch.sh), and on Docker, the runner's own. The
+# version matrix across CRS images is its own workflow (crs-matrix.yml).
+# Third-party actions are pinned to commit SHAs (tag in the comment), and no
+# checkout keeps the job's token in .git/config (persist-credentials: false):
+# nothing here pushes. Every job has a timeout a few times its usual length, so
+# a hung run cannot spend the month's minutes.
+name: wba
+
+on:
+  push:
+    paths-ignore:
+      - README.md
+      - CHANGELOG.md
+      - SECURITY.md
+      - LICENSE
+      - NOTICE
+      - .10x/**
+      - lua/wba/CONFORMANCE.md
+      - lua/wba/DESIGN.md
+      - lua/wba/HOW-IT-WORKS.md
+      - lua/wba/TESTING.md
+      - lua/wba/GETTING-STARTED.md
+      - lua/wba/FOR-BOT-OPERATORS.md
+      - wba-keysync/BOTS.md
+      - lua/wba/evidence/**
+      - .ash/**
+      - .github/dependabot.yml
+      - .github/workflows/crs-matrix.yml
+      - .github/workflows/interop.yml
+      - .github/workflows/lint-workflows.yml
+      - .github/workflows/security.yml
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a branch or pull request cancels its older run; a main run
+# always finishes, so every main commit keeps its result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # One job for both Lua versions: everything runs on 5.3, the version the CRS
+  # images ship, with the mutants in two shards (one per vCPU); the suites run
+  # again on 5.4. Mutants and key-sync do not depend on the Lua version, so
+  # they run once. The image's test stage proves 5.3 again with lua-openssl.
+  suites:
+    name: Lua suites (5.3, 5.4), mutants, key-sync
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      # The locale-independence check (and its mutant) must run, never skip.
+      WBA_REQUIRE_LATIN1: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.11
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26"
+      - name: Install Lua 5.3 and 5.4, openssl and a Latin-1 locale
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends lua5.3 lua5.4 openssl locales
+          sudo localedef -i fr_FR -f ISO-8859-1 fr_FR.ISO-8859-1
+      - name: All suites on Lua 5.3 (mutants in two shards)
+        run: LUA=lua5.3 JOBS=2 lua/tests/run_all.sh
+      - name: The Lua suites on 5.4
+        if: ${{ !cancelled() }}
+        run: LUA=lua5.4 lua/tests/run_all.sh --suites-only
+
+  # The go-ftw tests and the paranoia sweep each build the image again from
+  # the same Dockerfile, so after run.sh they take the layers from the cache.
+  live:
+    name: Live on ${{ matrix.runtime }} (image test stage, live checks, real IP, go-ftw, paranoia levels)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [finch, docker]
+    env:
+      # Finch runs as root on Linux; the runner's user can use Docker directly.
+      DOCKER: ${{ matrix.runtime == 'finch' && 'sudo finch' || 'docker' }}
+      LUA: lua5.4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.11
+      - name: Install Lua and openssl
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends lua5.4 openssl
+      - name: Install Finch (removes the runner's Docker)
+        if: matrix.runtime == 'finch'
+        run: bash .github/scripts/install-finch.sh
+      - name: Install go-ftw (release binary, pinned by version and SHA-256)
+        run: bash .github/scripts/install-go-ftw.sh
+      - name: Container CLI
+        run: $DOCKER version
+      - name: Image test stage and live checks (lua/tests/live/run.sh)
+        run: bash lua/tests/live/run.sh
+      - name: README Quick start, run as written (lua/tests/live/quickstart.sh)
+        run: bash lua/tests/live/quickstart.sh
+      - name: Which address ModSecurity sees behind a proxy (lua/tests/live/real-ip.sh)
+        run: bash lua/tests/live/real-ip.sh
+      - name: go-ftw tests in tests/regression, signed by a test bot (lua/tests/live/ftw.sh)
+        run: bash lua/tests/live/ftw.sh
+      - name: CRS paranoia levels 1 to 4 accept what the verifier accepts (lua/tests/live/paranoia.sh)
+        run: bash lua/tests/live/paranoia.sh

@@ -5,11 +5,13 @@
 //
 // Runs out of band (cron / systemd timer), never on the request path, so
 // ModSecurity never makes a network call and the Signature-Agent header can
-// never steer a fetch: only operator-listed URLs are fetched (agents.txt),
-// whatever their type (draft 5.5: directory, jwks_uri, cimd). Their DNS is
-// third-party, so a host that is, or resolves to, a private, loopback or
-// link-local address is refused before every fetch, a CIMD's jwks_uri hop
-// included (draft 6.7).
+// never steer a fetch: what is fetched is the URLs listed in agents.txt,
+// whatever their type (draft 5.5: directory, jwks_uri, cimd), plus the
+// jwks_uri that a listed CIMD document names, which whoever serves that
+// document chooses. Their DNS is third-party too, so a host that is, or
+// resolves to, a private, loopback or link-local address is refused before
+// every fetch, the CIMD's jwks_uri hop included (draft 6.7), and the lookup
+// has the same time limit as the fetch.
 //
 // Each directory is cached with HTTP's own rules (draft 5.5.2 and C.4, RFC
 // 9111): it is fetched again when its freshness lifetime ends, with
@@ -57,8 +59,13 @@ const TEST_KEY_THUMBPRINTS = new Set([
 // RFC 8037 2). A directory that publishes one has published the key itself.
 const PRIVATE_MEMBERS = ["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
 
-// The algorithms, key types and RSA bounds (algorithms.ts, the same rules as
-// lua/wba/algorithms.lua), re-exported for callers and tests.
+/**
+ * Text from the network (or a file a third party wrote) made safe to print:
+ * every C0 and C1 control character and DEL becomes a space, so a body, a
+ * header or a certificate name can never move the cursor, retitle a terminal
+ * or forge a line of output.
+ */
+export const printable = (s: string) => s.replace(/[\x00-\x1f\x7f-\x9f]/g, " "); // eslint-disable-line no-control-regex -- the control characters are what it removes
 
 // EC curves by JWK crv: the key type, and the coordinate size in bytes
 // (RFC 7518 6.2.1.2: x and y MUST be the full size of a coordinate).
@@ -337,7 +344,15 @@ export async function getDirectory(
   const type = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
   if (atWellKnown && type !== MEDIA_TYPE) throw new Error(`content-type "${type}", expected ${MEDIA_TYPE}`);
   const body = await readCapped(res, limits.maxBytes);
-  return { notModified: false, doc: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body)), headers: res.headers, body };
+  let doc: unknown;
+  try {
+    doc = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+  } catch {
+    // A fixed message: the runtime's own quotes part of the body (Node up to
+    // ten characters, Bun the offending one), and the body is remote input.
+    throw new Error(`the body (${body.length} bytes) is not UTF-8 JSON`);
+  }
+  return { notModified: false, doc, headers: res.headers, body };
 }
 
 /** The parsed directory, or a throw (no caching): getDirectory without validators. */
@@ -445,8 +460,31 @@ export function forbiddenAddress(ip: string): boolean {
 }
 
 export type Resolver = (host: string) => Promise<string[]>;
-export const resolveHost: Resolver = async (host) =>
+/** The system resolver, with no time limit of its own (getaddrinfo has none). */
+const lookupHost: Resolver = async (host) =>
   (await lookup(host, { all: true, verbatim: true })).map((r) => r.address);
+
+/**
+ * A resolver that gives up after ms, as a fetch does (draft 6.7): a DNS server
+ * that never answers must not hold a run, or the next timer's run, forever.
+ * The timer is cleared either way, so it never keeps the process alive.
+ */
+export function withDeadline(resolve: Resolver, ms: number): Resolver {
+  return async (host) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`DNS lookup of ${host} timed out after ${ms} ms`)), ms);
+    });
+    try {
+      return await Promise.race([resolve(host), late]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+}
+
+/** The system resolver within DEFAULT_LIMITS.timeoutMs: what validate.ts and lists.ts use. sync() applies its own limits. */
+export const resolveHost: Resolver = withDeadline(lookupHost, DEFAULT_LIMITS.timeoutMs);
 
 /**
  * Refuse a fetch whose host is, or resolves to, a private, loopback or
@@ -479,9 +517,12 @@ export function allowedOrigin(value: string): string | null {
  * guardAddress, except for an origin the operator named on key sync's command
  * line with --allow-private-origin: its own bot on its own network, or a test
  * bot. Only that exact origin (scheme, host and port) skips the check, and
- * each such fetch is reported. agents.txt and bots files cannot name one, so a
- * list from elsewhere never can. Draft 6.7 is a SHOULD; this is the operator's
- * choice for its own hosts (CONFORMANCE.md).
+ * each such fetch is reported. Only the URL an agents.txt line names is ever
+ * excepted (a directory, a JWK Set, a CIMD document), never the jwks_uri a
+ * CIMD document names: that URL is chosen by whoever serves the document.
+ * agents.txt cannot turn the exception on, but a line in it may name any path
+ * on an excepted origin, so except only origins you run. Draft 6.7 is a
+ * SHOULD; this is the operator's choice for its own hosts (CONFORMANCE.md).
  */
 async function guardUnlessAllowed(url: string, resolve: Resolver, allow: ReadonlySet<string>, warn: (w: string) => void): Promise<void> {
   const origin = new URL(url).origin;
@@ -567,7 +608,8 @@ async function resolveAgent(a: Agent, ctx: {
   const jwksUri = doc.jwks_uri;
   if (jwksUri === undefined) throw new Error("CIMD has no jwks or jwks_uri: no key material (draft 5.5)");
   if (typeof jwksUri !== "string" || urlIdentifier(jwksUri) === null) throw new Error("CIMD jwks_uri is not an https URL");
-  await guardUnlessAllowed(jwksUri, resolve, ctx.allowPrivate, warn);
+  // Named by the document, not by agents.txt: --allow-private-origin never covers it.
+  await guardAddress(jwksUri, resolve);
   const res2 = await getDirectory(jwksUri, limits, fetchImpl);
   const keys = await keysFromDirectory(res2.doc, limits, now, warn, new URL(jwksUri).pathname === WELL_KNOWN);
   return { keys, life: Math.min(life, freshnessLifetime(res2.headers, now)) };
@@ -588,7 +630,7 @@ export async function sync(
   const now = opts.now ?? Math.floor(Date.now() / 1000);
   // The time a response is received (proofs are judged then); tests fix it.
   const clock = opts.clock ?? (opts.now !== undefined ? () => now : () => Math.floor(Date.now() / 1000));
-  const resolve = opts.resolve ?? resolveHost;
+  const resolve = withDeadline(opts.resolve ?? lookupHost, limits.timeoutMs);
   const allowPrivate = new Set(opts.allowPrivate ?? []);
   const oldCache = opts.cache ?? {};
   const result: SyncResult = { entries: [], failures: [], warnings: [], cache: {}, fresh: [], empty: [], proofs: [] };

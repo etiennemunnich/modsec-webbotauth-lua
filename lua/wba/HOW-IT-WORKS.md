@@ -1,12 +1,13 @@
 # How Web Bot Auth works here
 
-This page explains, with diagrams, how a bot signs a request, what happens when that request reaches your site, how the bots' keys get onto your WAF, and how the result reaches CRS and your own rules. It describes what the plugin does today; [Protections added on 2026-10-09](#protections-added-on-2026-10-09) lists the newest settings and what is still planned. For commands and settings, see the [README](README.md); for the reasoning behind each choice, see [DESIGN.md](DESIGN.md).
+This page explains, with diagrams, how a bot signs a request, how the bots' keys reach your WAF, what happens when a signed request arrives, and how the result reaches CRS and your own rules. For commands and settings, see the [README](README.md); for the reasons behind each choice, see [DESIGN.md](DESIGN.md).
 
 ## Words used on this page
 
 | Word | Meaning here |
 |---|---|
 | **Bot operator** | The company that runs a bot or AI agent, for example OpenAI for ChatGPT's agent. |
+| **Draft -00** | [draft-ietf-webbotauth-httpsig-protocol-00](https://datatracker.ietf.org/doc/draft-ietf-webbotauth-httpsig-protocol/), the Web Bot Auth protocol draft this plugin implements. It builds on [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421), HTTP Message Signatures. |
 | **Key pair** | Two linked keys. The bot keeps the **private key** secret and signs with it; anyone can check a signature with the matching **public key**. |
 | **Signature** | A short value the bot computes over parts of its request with its private key. Only the private key's holder can produce it, and changing a signed part breaks it. |
 | **Key directory** | A file the bot operator publishes on its own website, at `https://<their site>/.well-known/http-message-signatures-directory`, listing its public keys. |
@@ -16,7 +17,7 @@ This page explains, with diagrams, how a bot signs a request, what happens when 
 | **Key store** | `wba-keys.tsv`, the file of public keys the WAF reads. |
 | **Verifier** | This plugin's checking code. It runs inside ModSecurity, in front of your application, and decides whether a request's signature is genuine. |
 | **Outcome** | The verifier's verdict, written into ModSecurity variables: `tx.wba_status` (`verified`, `invalid`, `unverified` or `not-signed`) and `tx.wba_reason` (why). |
-| **Recipe** | A ready-made rule in [`recipes.conf`](recipes.conf) that acts on the outcome, for example "refuse unsigned requests on `/agents/`". |
+| **Recipe** | A ready-made rule in [`recipes.conf`](recipes.conf) that acts on the outcome, for example "refuse anything not `verified` on `/agents/`". |
 | **CRS** | The OWASP Core Rule Set, the attack-detection rules that run in the same ModSecurity. |
 
 ## The big picture
@@ -47,7 +48,7 @@ flowchart LR
 
 ## 1. How a bot signs a request
 
-The bot chooses which parts of its request to sign. Draft -00 requires at least the site it is talking to (`@authority`, from the Host header, or the full `@target-uri`) and, when it sends one, the `Signature-Agent` entry naming its key directory. Many bots also sign the method and path. It adds a creation time, an expiry time and a tag, and signs the whole thing with its private key.
+The bot chooses which parts of its request to sign. Draft -00 requires at least the site name (`@authority`, from the Host header, or the full `@target-uri`) and, when it sends one, the `Signature-Agent` entry naming its key directory; many bots also sign the method and path.
 
 ```mermaid
 sequenceDiagram
@@ -69,7 +70,7 @@ Signature-Input: sig1=("@authority" "signature-agent";key="sig1");created=179092
 Signature: sig1=:<base64 signature>:
 ```
 
-The `keyid` is the key's [RFC 7638](https://www.rfc-editor.org/rfc/rfc7638) thumbprint, a hash of the public key, so the verifier can find the right key in the bot's directory.
+The `keyid` is the key's [RFC 7638](https://www.rfc-editor.org/rfc/rfc7638) thumbprint, a hash of the public key, so the verifier can find the right key in the bot's directory. This example signs only the site name and the `Signature-Agent` entry, the least Draft -00 allows. It can be `verified` but is never granted (`tx.wba_granted` stays 0): a signature over the site name alone works for any page, so a grant needs `@method` and `@path` too.
 
 ## 2. How the bots' keys reach your WAF
 
@@ -90,7 +91,7 @@ sequenceDiagram
         K->>K: check the response: HTTPS, size limits, key types,<br/>no published test keys, thumbprints, the optional proof
     end
     K->>F: write the new key store, then rename it over the old one
-    Note over K,F: A bot whose fetch failed keeps its last good keys.<br/>Exit 0 = all good, 2 = some bot failed (alert on it), 1 = config error.
+    Note over K,F: A bot whose fetch failed keeps its last good keys.<br/>Exit 0 = all good, 2 = some bot failed (alert on it), 1 = wrong command or missing agents.txt.
 ```
 
 Because the store is replaced in one rename, the verifier never reads a half-written file. It reads the store on every signed request, so a new key works without restarting the WAF.
@@ -103,36 +104,34 @@ Every request passes through nginx and ModSecurity. Unsigned requests cost almos
 sequenceDiagram
     autonumber
     participant C as Client (bot or anyone)
-    participant N as nginx and the guard
+    participant N as nginx
     participant V as Verifier (Lua, in ModSecurity)
     participant R as Your rules and CRS
     participant A as Your application
     C->>N: request
-    alt signed, but over plain HTTP or with an absolute URL
-        N-->>C: 400 (the guard)
-    else everything else
-        N->>V: phase 1: headers
-        alt no Signature-Input and no Signature header
-            V->>V: outcome not-signed, skip the verifier
-        else signed
-            V->>V: parse the headers, check the times, coverage,<br/>key and signature (next diagram)
-            V->>V: outcome verified, invalid or unverified, with a reason
-        end
-        opt the signature covers the body
-            V->>V: phase 2: hash the body and compare
-        end
-        V->>R: outcome in tx.wba_status, tx.wba_reason, tx.wba_agent ...
-        alt a rule refuses the request
-            R-->>C: 403, 429 or 400
-        else allowed
-            R->>A: request
-            A-->>C: response
-        end
-        Note over V: phase 5: one JSON log line for every signed request
+    N->>V: phase 1: headers
+    alt no Signature-Input and no Signature header
+        V->>V: outcome not-signed, skip the verifier
+    else signed
+        V->>V: parse the headers, check the times, coverage,<br/>key and signature (next diagram)
+        V->>V: outcome verified, invalid or unverified, with a reason
     end
+    opt the signature covers the body
+        V->>V: phase 2: hash the body and compare
+    end
+    V->>R: outcome in tx.wba_status, tx.wba_reason, tx.wba_agent ...
+    alt a rule refuses the request
+        R-->>C: 403, 429 or 400
+    else allowed
+        R->>A: request
+        A-->>C: response
+    end
+    Note over V: phase 5: one JSON log line for every signed request
 ```
 
-A signature header that cannot be parsed at all is ignored by default, so the request counts as unsigned (RFC 9651 section 4.2); with `tx.wba_malformed=reject` it gets **400** from rule 9534107 instead. A body digest header that the signature covers is different: if it cannot be parsed, the request is always `invalid/malformed-digest` and gets **400** from the same rule. Only a good signature from a bot you list gets that far, and ignoring the header would leave the body unchecked while the signature says it covers it.
+**What ModSecurity cannot see.** Whether the client used TLS, and a host written in the request line (`GET http://other.example/`): it sees only the `Host` header. So serve signed traffic over HTTPS, because over plain HTTP anyone on the path can change what a signature does not cover. The request-line host matters only when one nginx serves several sites ([DESIGN.md](DESIGN.md#what-modsecurity-cannot-see), and the README's [Known limits](README.md#known-limits)).
+
+**Headers that do not parse.** An unparsable `Signature-Input` or `Signature` is ignored by default, so the request counts as unsigned (`not-signed/unparsable-field`, RFC 9651 section 4.2); with `tx.wba_malformed=reject` it is `invalid/malformed-headers` and rule 9534107 answers **400**. An unparsable `Signature-Agent` is `invalid` under either setting. Usually that is `invalid/missing-component`, with no 400: the signature covers one entry (`"signature-agent";key="sig1"`), which cannot be found in a header that does not parse. Only a signature over the whole header gets `invalid/unparsable-agent`, or with `reject`, `invalid/malformed-headers` and the 400. A covered body digest header that does not parse is always `invalid/malformed-digest` and **400**: ignoring it would leave the body unchecked while the signature says it covers it.
 
 ## 4. How the verifier decides
 
@@ -140,7 +139,7 @@ The verifier checks each signature tagged `web-bot-auth` on its own, and the req
 
 ```mermaid
 flowchart TD
-    S([Signed request]) --> P{Headers parse?}
+    S([Signed request]) --> P{"Signature-Input and<br/>Signature parse?"}
     P -- no --> M["not-signed / unparsable-field (default)<br/>or invalid / malformed-headers and 400<br/>(tx.wba_malformed=reject)"]
     P -- yes --> T{A signature tagged<br/>web-bot-auth?}
     T -- no --> NS[not-signed]
@@ -175,21 +174,23 @@ The full list of reasons is in the [README](README.md#outcomes-and-reasons).
 
 ## 5. How the outcome reaches CRS and your rules
 
-The verifier runs as CRS's **before** plugin, so its outcome exists before any CRS rule runs. Your own rules go in a `*-after.conf` file and run after CRS in the same phase. The plugin itself blocks nothing except broken protocol: the guard's 400, and rule 9534107's 400. That rule answers a covered body digest header that cannot be parsed, always, and an unparsable signature header only if you choose `tx.wba_malformed=reject`.
+The verifier runs as CRS's **before** plugin, so its outcome exists before any CRS rule runs. Your own rules go in a `*-after.conf` file and run after CRS in the same phase. The plugin itself blocks nothing except broken protocol: rule 9534107's 400 (section 3). The bot-list rules, if you use them, load right after the verifier and before CRS's rules, and set `tx.bot_status` for your rules in the same way.
 
 ```mermaid
 flowchart LR
     subgraph P1["Phase 1: headers"]
-        G["Guard<br/>(nginx, before ModSecurity)"] --> V1["Verifier<br/>web-bot-auth-before.conf"]
+        V1["Verifier<br/>web-bot-auth-before.conf"] --> BL1["Bot lists, if used: User-Agent claim,<br/>IP list (web-bot-auth-bots-before.conf)"]
     end
     subgraph P2["Phase 2: body"]
-        V2["Body digest check<br/>(only if signed over the body)"] --> CRS["CRS attack rules<br/>(phases 1 and 2, always run)"]
+        V2["Body digest check<br/>(only if signed over the body)"] --> BL2["Bot lists: signature,<br/>then your bot policy"]
+        BL2 --> CRS["CRS attack rules<br/>(phases 1 and 2, always run)"]
         CRS --> YR["Your rules and recipes<br/>*-after.conf"]
     end
     subgraph P5["Phase 5: after the response"]
         LOG["One JSON log line<br/>per signed request"]
     end
     V1 -- "tx.wba_status, tx.wba_reason,<br/>tx.wba_agent, tx.wba_granted" --> V2
+    BL1 -- "tx.bot_name, tx.bot_status" --> BL2
     YR -- "e.g. recipe C sets<br/>tx.bot_management_exempt=1" --> BM["Your bot management"]
     YR --> LOG
 ```
@@ -228,19 +229,17 @@ sequenceDiagram
 
 The verifier does not check that the nonce returned is the one nginx issued; [DESIGN.md](DESIGN.md#asking-for-a-signature-in-detail) explains why.
 
-## Protections added on 2026-10-09
+## Settings that limit what a signature can do
 
-Decided after a point-by-point review of RFC 9421 and draft -00 against this code and confirmed by an independent review. Each is a setting in [web-bot-auth-config.conf](web-bot-auth-config.conf).
+Each is a setting in [web-bot-auth-config.conf](web-bot-auth-config.conf).
 
-1. **Your site names** (`tx.wba_site_names`, required). A signature names the site it was made for, from the Host the bot sent. You list your own names once; a signature made for any other name is `invalid/foreign-authority`. Until the list is set, nothing verifies.
-2. **One hour** (`tx.wba_max_age`, default 3600). A signature counts for at most an hour after the bot signed it, and never past its own expiry, whatever window the bot declared. Because this bounds every signature, the window the bot declares has no cap by default (with `tx.wba_max_age=0`, the cap is a day).
-3. **Expiry, strict or graceful** (`tx.wba_expiry_grace`, default 0). Strict by default; up to 60 seconds of leeway for clocks a little behind the bot's.
-4. **Unparsable signature headers** (`tx.wba_malformed`, default `ignore`). RFC 9651 section 4.2 allows ignoring the header or treating the request as malformed. Ignoring it is the default, so other signature formats, such as ActivityPub's, pass as unsigned; `reject` gives the 400. This setting covers `Signature-Input`, `Signature` and `Signature-Agent` only, not a covered body digest header (section 3).
-5. **What a grant needs** (`tx.wba_grant_require_components`, default `@method @path`). A signature over the site name alone works for any page, so it is not granted.
+**Your site names** (`tx.wba_site_names`, required). A signature names the site it was made for, from the Host the bot sent. You list your own names once; a signature made for any other name is `invalid/foreign-authority`. Until the list is set, nothing verifies.
 
-Bot lists sit beside the signature check: `wba-keysync/lists.ts` fetches each bot operator's published IP ranges and writes plain SecRules from them and the User-Agent tokens, so a request carries `tx.bot_status` next to the signature outcome (claimed by its User-Agent; verified by the bot's IP list or its signature) and your policy for the bot can act on it. The ranges are compiled when the WAF starts, so a request never waits on a fetch or a DNS lookup. Reverse DNS, for the few operators that publish only host names, comes later and runs offline in the sync tool, never inside a request (`wba-keysync/BOTS.md` says why this project does not use CRS's fake-bot plugin).
+The others bound how long a signature counts (`tx.wba_max_age`, an hour; `tx.wba_expiry_grace`), what an unparsable signature header does (`tx.wba_malformed`, section 3), and what a grant needs the signature to cover (`tx.wba_grant_require_components`, `@method @path`). The README's [Controls and defaults](README.md#controls-and-defaults) table lists each with its default.
 
-How the first change stops the replay:
+Bot lists sit beside the signature check: `wba-keysync/lists.ts` writes plain SecRules from each bot operator's published IP ranges and User-Agent tokens, so a request also carries `tx.bot_status` (`claimed` by its User-Agent, or `verified` by the bot's IP list or signature) for your bot policy. The WAF compiles the ranges when it starts, so a request never waits on a fetch or a DNS lookup. Reverse DNS checks, for the few operators that publish only host names, are not built.
+
+How the site names stop a replay:
 
 ```mermaid
 sequenceDiagram

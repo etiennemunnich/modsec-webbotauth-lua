@@ -8,15 +8,17 @@
 // A bot's product tokens are its `robots` field, or else its User-Agent
 // tokens with a trailing "/" dropped. A token that is not one word (letters,
 // digits, ".", "_", "-") is a User-Agent fragment, not a product token: it is
-// left out and named in a comment.
+// left out and named in a comment. A bot named so that validate.ts would
+// refuse it (a newline in its name would add a line of its own) fails the
+// run.
 //
 // Bun only: YAML is read with Bun.YAML (robotsTxt itself runs anywhere).
-// Exit codes: 0 written; 1 usage error or unreadable file.
+// Exit codes: 0 written; 1 usage error, unreadable file or a bad name.
 
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { writeAtomic } from "./keysync.ts";
-import type { Bot } from "./validate.ts";
+import { nameProblem, show, type Bot } from "./validate.ts";
 
 const asList = <T>(x: T | T[] | undefined): T[] => (x === undefined ? [] : Array.isArray(x) ? x : [x]);
 const PRODUCT = /^[A-Za-z0-9._-]+$/;
@@ -28,10 +30,13 @@ export function robotsTxt(bots: Bot[], source: string, at = new Date()): string 
     "# robots.txt asks; it does not refuse anything. The WAF rules from lists.ts do.",
   ];
   const tokens: string[] = [], seen = new Set<string>(), skipped: string[] = [];
-  for (const b of bots.filter((x) => x.policy === "deny")) {
-    const own = b.robots !== undefined ? asList(b.robots) : asList(b.user_agent).map((t) => String(t).replace(/\/$/, ""));
+  for (const b of bots.filter((x) => x?.policy === "deny")) {
+    const bad = nameProblem(b.name);
+    if (bad) throw new Error(`${bad} (validate.ts checks every entry)`);
+    const own = b.robots !== undefined ? asList(b.robots) : asList(b.user_agent).map((t) => (typeof t === "string" ? t.replace(/\/$/, "") : t));
     for (const t of own) {
-      if (!PRODUCT.test(t)) { skipped.push(`${b.name}: ${JSON.stringify(t)}`); continue; }
+      if (typeof t !== "string") { skipped.push(`${b.name}: ${show(t)}`); continue; }
+      if (!PRODUCT.test(t)) { skipped.push(`${b.name}: ${show(t)}`); continue; }
       if (!seen.has(t.toLowerCase())) { seen.add(t.toLowerCase()); tokens.push(t); }
     }
   }
@@ -52,7 +57,9 @@ function main(argv: string[]): number {
   let bots: Bot[];
   try { bots = (yaml.parse(readFileSync(file, "utf8")) as { bots?: Bot[] } | null)?.bots ?? []; }
   catch (e) { console.error(`${file}: ${(e as Error).message}`); return 1; }
-  const text = robotsTxt(bots, basename(file));
+  let text: string;
+  try { text = robotsTxt(bots, basename(file)); }
+  catch (e) { console.error(`${file}: ${(e as Error).message}`); return 1; }
   if (outPath) writeAtomic(outPath, text); else process.stdout.write(text);
   return 0;
 }

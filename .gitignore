@@ -1,2 +1,6 @@
 # README Quick start working directory (holds a private test key)
 /wba-demo/
+# The test bot's private key, written by sign.ts init
+test-agent-key.json
+# ASH writes its reports here when run by hand
+/.ash/ash_output/

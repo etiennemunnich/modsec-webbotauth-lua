@@ -1,17 +1,17 @@
 # Getting started: nginx, ModSecurity, CRS and Web Bot Auth
 
-> **Preview: do not use this in production yet.** The plugin is a preview ([README](README.md)). Try it on a test server first.
+> **Alpha: do not use this in production yet.** This is v0.1.0-alpha.1 ([README](README.md)). Try it on a test server first.
 
 At the end of this page you have nginx on Debian 13 (trixie) with ModSecurity v3, the OWASP Core Rule Set (CRS) 4.30.0 and this plugin. An unsigned request to a bot-only path is refused and asked for a signature. A request signed by a test bot is verified, passed to your application and logged.
 
 There are two ways to run the plugin:
 
-- **The CRS container image (recommended).** The official CRS nginx image plus this plugin, built from the [`Dockerfile`](Dockerfile). It is the tested route: the live suite runs on every CRS release of the last 12 months ([TESTING.md, Version matrix](TESTING.md#version-matrix)). See the README's [Quick start](README.md#quick-start) and [Set up](README.md#set-up).
-- **Your own nginx on Debian 13 (this page).** Debian's own nginx and ModSecurity packages, CRS from the CRS release, and the plugin's files where the image puts them. [`lua/tests/live/getting-started.sh`](../tests/live/getting-started.sh) runs this page as written in a clean `debian:trixie` container, so the page cannot drift from what works.
+- **The CRS container image (recommended).** The official CRS nginx image plus this plugin, built from the [`Dockerfile`](Dockerfile). It is the tested route: the live suite passed on every CRS release of the last 12 months (24 images, 11 October 2026; [TESTING.md, Version matrix](TESTING.md#version-matrix)). See the README's [Quick start](README.md#quick-start) and [Set up](README.md#set-up).
+- **Your own nginx on Debian 13 (this page).** Debian's own nginx and ModSecurity packages, CRS from the CRS release, and the plugin's files where the image puts them. [`lua/tests/live/getting-started.sh`](../tests/live/getting-started.sh) runs this page's commands as written in a clean `debian:trixie` container and checks the results: `bash lua/tests/live/getting-started.sh` (Finch; `DOCKER=docker` for Docker).
 
 ## What you get on Debian
 
-| | The image | Debian 13 (this page) |
+| | The image | Debian 13 (this page), as tested 12 October 2026, with trixie-security |
 |---|---|---|
 | nginx | 1.30.5 | 1.26.3 (`nginx` 1.26.3-3+deb13u9) |
 | libmodsecurity | 3.0.17 | 3.0.14 (`libmodsecurity3t64` 3.0.14-1+deb13u1) |
@@ -22,13 +22,13 @@ There are two ways to run the plugin:
 
 **Security fixes.** ModSecurity fixed bugs upstream after 3.0.14. On Debian you get those fixes only when Debian backports them. On 11 October 2026 the [Debian security tracker](https://security-tracker.debian.org/tracker/source-package/modsecurity) listed ten open issues as unfixed in trixie's package, for example CVE-2026-104269 (a multipart `filename*` parameter that gets past filename rules). Read that page before you choose this route, and again with each Debian update. The image route takes ModSecurity from the CRS image instead: 3.0.17 in the build the Dockerfile pins.
 
-**What is tested here.** The test runs this page at CRS paranoia level 1: an unsigned `GET`, a signed `GET` over HTTP/1.1 and over HTTP/2, a signed request over plain HTTP, and an unknown host name. It also sends a signed `POST` whose signature covers its body (through `Content-Digest`), over HTTP/1.1 and HTTP/2, and the same request with one byte of the body changed, which is refused. It then sends the signed requests again at level 4, rotates the logs, and runs [Behind a load balancer](#behind-a-load-balancer). The full live suite and every signer shape in [`paranoia.sh`](../tests/live/paranoia.sh) run on the image only. The version matrix includes images with libmodsecurity 3.0.14, but with connector 1.0.4, not Debian's 1.0.3.
+**What is tested here.** Signed and unsigned requests at paranoia levels 1 and 4, a signed `POST` with a changed body, log rotation and the load balancer setup; the full live suite runs on the image only ([TESTING.md](TESTING.md#what-is-proven-and-how)).
 
 ## Before you start
 
-- **A server and your machine.** A Debian 13 server where you are root, with a copy of this repository at `/opt/web-bot-auth` (the commands use that path). Your own machine needs this repository and [Bun](https://bun.sh) (or Node 26: type `node` for `bun`) to sign test requests.
+- **A server and your machine.** A Debian 13 server where you are root, with a copy of this repository at `/opt/web-bot-auth` (the commands use that path). To get it there, clone the release on your machine with `git clone --branch v0.1.0-alpha.1 https://github.com/etiennemunnich/modsec-webbotauth-lua.git`, then copy it to the server with `scp -r modsec-webbotauth-lua root@example.com:/opt/web-bot-auth`. Your own machine needs this repository and [Bun](https://bun.sh) (or Node 26: type `node` for `bun`) to sign test requests.
 - **Your site's name.** The page uses `example.com`. Replace it everywhere with your own name.
-- **TLS.** The plugin's nginx guard refuses a signed request over plain HTTP with 400 (draft 6.1: anyone on the path could change what the signature does not cover). Step 6 makes a self-signed certificate so you can test now. Production uses a real certificate, for example from your CA or Let's Encrypt.
+- **TLS.** Serve signed requests over HTTPS. A signature does not cover every header, so over plain HTTP anyone on the path could change the parts it does not cover (the Web Bot Auth draft, draft-ietf-webbotauth-httpsig-protocol, section 6.1: clients should use TLS or equivalent transport security). Step 6 makes a self-signed certificate so you can test now, and step 7 redirects plain HTTP for your name to HTTPS. Production uses a real certificate, for example from your CA or Let's Encrypt.
 - **The clock.** Keep the server's clock in sync with NTP (for example `systemd-timesyncd` or `chrony`). A signature may be dated up to 60 seconds ahead of your clock and expires exactly at its `expires` time.
 - **CRS 4, not Debian's CRS 3.** Debian's `modsecurity-crs` package is CRS 3.3.7. CRS 3 has no plugin mechanism, and this plugin is a CRS plugin: CRS 4 loads it from its `plugins/` directory. Step 3 installs CRS 4.30.0 from the CRS release instead, and step 1 keeps Debian's CRS 3 off the server.
 - **Request body access stays on.** It is ModSecurity's recommended setting and what CRS expects. The plugin finishes body-signed requests in phase 2, and the example rules decide there. Never turn it off.
@@ -38,14 +38,14 @@ There are two ways to run the plugin:
 
 ### How this page is tested
 
-Each `bash` block's first line says where it runs:
+Each `bash` block's first line says where it runs; the test runs it there, in page order:
 
-- `# On the server`: as root on the server. The test runs these in a `debian:trixie` container, in page order.
-- `# On your machine`: on your own machine, from the repository root. The test runs these on the test host.
-- `# On the server (optional)`: only if you want it. The test runs these after the blocks above.
-- `# On the server (behind a load balancer)`: only if a load balancer or CDN ends TLS in front of nginx. The test runs these last.
+- `# On the server`: as root on the server.
+- `# On your machine`: from the repository root.
+- `# On the server (optional)`: only if you want it.
+- `# On the server (behind a load balancer)`: only if a load balancer or CDN ends TLS before nginx.
 
-Other blocks are examples for your own site and are not run. The test stands in for five things this page leaves to you: your application (a stub on `127.0.0.1:8080` that answers 200), DNS (`example.com` reaches the container), systemd (the container has none), `scp` (a copy into the container), and your load balancer (an nginx server in the container that ends TLS and connects to nginx from `192.0.2.10`).
+Other blocks are examples and are not run.
 
 ## 1. Install nginx, ModSecurity and Lua
 
@@ -198,7 +198,7 @@ SecPcreMatchLimit 100000
 SecPcreMatchLimitRecursion 100000
 # Refuse a request where the cap was hit. This rule runs at the start of
 # phase 2, so it sees a hit in a phase 1 rule only: a hit in a CRS rule that
-# runs later in phase 2 is not refused (tested). ModSecurity knows this:
+# runs later in phase 2 is not refused (tested). Reported upstream, still open:
 # https://github.com/owasp-modsecurity/ModSecurity/issues/3415
 SecRule TX:/^MSC_/ "!@streq 0" \
     "id:'200005',phase:2,t:none,log,deny,msg:'ModSecurity internal error flagged: %{MATCHED_VAR_NAME}'"
@@ -247,8 +247,10 @@ Include /etc/modsecurity.d/owasp-crs/plugins/*-after.conf
 EOF
 ```
 
+**Rule 200005 has a gap.** It refuses a request only when a phase 1 rule reached the regex work limit. Almost all CRS attack rules run later, in phase 2. When one of them reaches the limit, ModSecurity counts it as no match and nothing refuses the request. This is [ModSecurity issue #3415](https://github.com/owasp-modsecurity/ModSecurity/issues/3415) (open), not specific to Debian, and one reason the limit here is 100000, not the sample's 1000 ([evidence](evidence/pcre-match-limit.md)).
+
 - **The include order** is the one [CRS's plugin documentation](https://coreruleset.org/docs/4-about-plugins/4-1-plugins/) gives. The plugin's rules are a "before" file, so the variables they set exist before any CRS rule runs. Your own rules are "after" files, so they run after CRS and see what it and the plugin decided.
-- **The audit log is named `.json`, not `.log`, on purpose.** Debian's `/etc/logrotate.d/nginx` rotates `/var/log/nginx/*.log` by renaming each file and creating a new one. ModSecurity keeps writing to the file it opened, even after `nginx -s reopen` and `nginx -s reload` (tested), so a renamed audit log would stop growing in its new place. [Go live](#go-live) rotates it with `copytruncate` instead.
+- **The audit log is named `.json`, not `.log`, on purpose.** Debian's `/etc/logrotate.d/nginx` rotates `/var/log/nginx/*.log` by renaming each file and creating a new one. ModSecurity keeps writing to the file it opened, even after `nginx -s reopen` and `nginx -s reload` (reload tested), so a renamed audit log would stop growing in its new place. [Go live](#go-live) rotates it with `copytruncate` instead.
 
 ## 5. Install the plugin
 
@@ -282,7 +284,7 @@ What goes where, and why:
 | `modsecurity_entry.lua`, `wba_log.lua` and the modules | `/etc/modsecurity.d/wba/lua/` and its `wba/` | where `wba.conf`'s `SecRuleScript` lines and `modsecurity_entry.lua`'s `CONFIG` look for them |
 | [`wba.conf`](wba.conf) | `plugins/web-bot-auth-before.conf` | the plugin's own rules. They set the `tx.wba_*` variables and write the log line, and refuse nothing except broken protocol. Do not edit it |
 | [`web-bot-auth-config.conf`](web-bot-auth-config.conf) | `plugins/web-bot-auth-config.conf` | the settings, every one commented out, with what each does ([Controls and defaults](README.md#controls-and-defaults)) |
-| `wba-site-config.conf` | `plugins/` | the one required setting, your site names, in a file of its own as in the Quick start. An upgrade can then replace the shipped settings file. Writing it into `web-bot-auth-config.conf` works too |
+| `wba-site-config.conf` | `plugins/` | the one required setting, your site names, in a file of its own as in the Quick start. An upgrade can then replace the shipped settings file. Or set it in `web-bot-auth-config.conf` instead. Not both: both load, and `web-bot-auth-config.conf`'s value wins |
 | [`recipes.conf`](recipes.conf) | `plugins/wba-recipes-after.conf` | the six example rules, so you can see a refusal: recipe A refuses an unverified request to `/agents/` and asks for a signature. Replace them with your own rules before you go live |
 
 **The one edit: where the log goes.** `wba_log.lua`'s `CONFIG.path` is `/dev/stdout`, the container's log in the image. For nginx run as a daemon, `sed` points it at `/var/log/nginx/wba.log`, and `grep` prints the changed line (it fails if the line did not change). The file is created owned by `www-data`, because the nginx workers write it. `wba_log.lua` opens the file for each line it writes, so after log rotation the next line goes to the new file with no signal to nginx. Debian's `/etc/logrotate.d/nginx` already rotates `/var/log/nginx/*.log`, this file included, and creates the new one as `www-data`.
@@ -304,9 +306,7 @@ chmod 600 /etc/nginx/tls/example.com.key
 
 ```bash
 # On the server
-install -m 644 /opt/web-bot-auth/lua/wba/nginx/web-bot-auth-guard.conf /etc/nginx/conf.d/
-install -m 644 /opt/web-bot-auth/lua/wba/nginx/web-bot-auth-guard-server.conf \
-  /opt/web-bot-auth/lua/wba/nginx/web-bot-auth-accept-signature.conf /etc/nginx/snippets/
+install -m 644 /opt/web-bot-auth/lua/wba/nginx/web-bot-auth-accept-signature.conf /etc/nginx/snippets/
 rm -f /etc/nginx/sites-enabled/default
 cat > /etc/nginx/sites-available/example.com <<'EOF'
 # Names this server does not serve: no TLS handshake, and 421 Misdirected
@@ -321,13 +321,12 @@ server {
     return 421;
 }
 
-# Plain HTTP for your name. The guard comes first, so a signed request gets
-# 400 (draft 6.1); everything else is redirected to HTTPS.
+# Plain HTTP for your name: every request, signed or not, is redirected to
+# HTTPS and never reaches your application.
 server {
     listen 80;
     listen [::]:80;
     server_name example.com;
-    include snippets/web-bot-auth-guard-server.conf;
     return 301 https://$host$request_uri;
 }
 
@@ -345,7 +344,6 @@ server {
     modsecurity on;
     modsecurity_rules_file /etc/modsecurity.d/setup.conf;
 
-    include snippets/web-bot-auth-guard-server.conf;
     include snippets/web-bot-auth-accept-signature.conf;
 
     location / {
@@ -365,11 +363,11 @@ systemctl reload nginx
 
 What each part does:
 
-- **`conf.d/web-bot-auth-guard.conf`** (http level: Debian's `nginx.conf` includes `conf.d/*.conf` inside `http`) defines when a signed request must be refused. **`snippets/web-bot-auth-guard-server.conf`** does the refusing, in every server block that can see a signed request. Together they answer 400 to a signed request that arrives over plain HTTP, or whose request target does not start with `/` (for example `GET http://other.example/`). Without the guard, a signature made for one host could verify a request nginx served for another ([README, step 5](README.md#5-tls-load-balancers-and-the-guard)). Unsigned requests are never touched.
 - **`snippets/web-bot-auth-accept-signature.conf`** turns the status 460 that recipe A refuses with into 403 with an `Accept-Signature` header, which asks the client to sign ([Asking for a signature](README.md#asking-for-a-signature)). Keep `proxy_intercept_errors` off, nginx's default, as the file's comments explain.
 - **Debian's default site is removed** because it also claims `default_server` on port 80. With both enabled, `nginx -t` fails with `a duplicate default server for 0.0.0.0:80`.
-- **The catch-all server** refuses names you do not serve ([README, step 5](README.md#5-tls-load-balancers-and-the-guard)). `ssl_reject_handshake on` means a TLS client that asks for any other name, or for none, gets no certificate and no handshake. So check your site by its name, not by its address.
-- **`modsecurity on` and `modsecurity_rules_file`** sit in the TLS server block: ModSecurity runs only for your site. If you serve several sites, add those two lines and both `include` lines to each one, and list every name in `tx.wba_site_names`.
+- **The plain HTTP server for your name** redirects every request to HTTPS, so the plugin verifies signed requests only over TLS (see TLS in [Before you start](#before-you-start)).
+- **The catch-all server** refuses names you do not serve ([README, step 5](README.md#5-tls-and-load-balancers)). `ssl_reject_handshake on` means a TLS client that asks for any other name, or for none, gets no certificate and no handshake. So check your site by its name, not by its address.
+- **`modsecurity on` and `modsecurity_rules_file`** sit in the TLS server block: ModSecurity runs only for your site. If you serve several sites, add those two lines and the `include` line to each one, and list every name in `tx.wba_site_names`.
 - **`proxy_pass http://127.0.0.1:8080`** stands for your application. Change it to where yours listens. If nothing listens there, a request that passes every rule gets 502 from nginx instead of 200.
 
 ## Check it works
@@ -426,13 +424,6 @@ bun wba-keysync/sign.ts curl https://example.com/agents/hello --dir ~/wba-test -
 
 Both print `200` from your application (502 if nothing listens on `127.0.0.1:8080` yet). `--insecure` is there only because the test certificate is self-signed. Leave off `| sh` to read the signed headers.
 
-**The same signed request over plain HTTP** gets 400 from the guard:
-
-```bash
-# On your machine
-bun wba-keysync/sign.ts curl http://example.com/agents/hello --dir ~/wba-test | sh
-```
-
 **A name you do not serve** gets 421 from the catch-all:
 
 ```bash
@@ -440,12 +431,12 @@ bun wba-keysync/sign.ts curl http://example.com/agents/hello --dir ~/wba-test | 
 curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: other.example' http://example.com/
 ```
 
-**What the server logged.** One JSON line in `wba.log` for each signed request ModSecurity saw (the plain HTTP one never reached it); nginx's access log, which shows the protocol of each request; and nginx's error log, which names the rule behind each refusal:
+**What the server logged.** One JSON line in `wba.log` for each signed request; nginx's access log, which shows the protocol of each request; and nginx's error log, which names the rule behind each refusal:
 
 ```bash
 # On the server
 tail -n 2 /var/log/nginx/wba.log
-tail -n 6 /var/log/nginx/access.log
+tail -n 5 /var/log/nginx/access.log
 grep -F 'ModSecurity: Access denied' /var/log/nginx/error.log | tail -n 2
 ```
 
@@ -456,7 +447,6 @@ grep -F 'ModSecurity: Access denied' /var/log/nginx/error.log | tail -n 2
 ... "GET /?foo=/etc/passwd&bar=/bin/sh HTTP/2.0" 403 ...
 ... "GET /agents/hello HTTP/1.1" 200 ...
 ... "GET /agents/hello HTTP/2.0" 200 ...
-... "GET /agents/hello HTTP/1.1" 400 ...
 ... "GET / HTTP/1.1" 421 ...
 ... ModSecurity: Access denied with code 460 (phase 2). ... [id "9534130"] [msg "Web Bot Auth: a verified signature is required here"] ...
 ... ModSecurity: Access denied with code 403 (phase 2). ... [id "949110"] [msg "Inbound Anomaly Score Exceeded (Total Score: 15)"] ...
@@ -468,7 +458,7 @@ When you are done with the test bot, delete `~/wba-test` on your machine. Never 
 
 ## Paranoia levels
 
-CRS's paranoia level (PL) decides how strict CRS is, from 1 (the default) to 4. It is set in `crs-setup.conf` by rule 900000, `tx.blocking_paranoia_level`, which is commented out there, so CRS runs at PL 1. The plugin works at every level ([README, CRS paranoia levels](README.md#crs-paranoia-levels)). At PL 4 it exempts its three headers from CRS rule 920274 only, and CRS rule 941120 has a false positive at every level for some base64 values. That section shows the exclusion to use.
+CRS's paranoia level (PL) decides how strict CRS is, from 1 (the default) to 4. It is set in `crs-setup.conf` by rule 900000, `tx.blocking_paranoia_level`, which is commented out there, so CRS runs at PL 1. The plugin works at every level ([README, CRS paranoia levels](README.md#crs-paranoia-levels)). At PL 4 it exempts its three headers from CRS rule 920274 only. Two CRS rules can still refuse a signed request: rule 941120 has a false positive at every level for some base64 values, and at levels 3 and 4 rule 920272 refuses a `Signature-Agent` URL with a non-ASCII character or a literal `%`. That section shows both exclusions.
 
 To raise the level, add rule 900000 at the end of `crs-setup.conf` (here PL 4), check the configuration and reload:
 
@@ -494,9 +484,9 @@ Add it once. To change the level later, edit that rule's last line. Expect false
 
 ## Behind a load balancer
 
-When a load balancer or CDN sits in front of nginx and ends TLS, three things change: your site's traffic reaches nginx over plain HTTP, the guard must learn which requests arrived over TLS, and the visitor's address arrives in a header. The three blocks below set this up. Run them only if you have a load balancer. The test runs them last, with an nginx server in the same container standing in for a load balancer at `192.0.2.10`.
+When a load balancer or CDN sits in front of nginx and ends TLS, two things change: your site's traffic reaches nginx over plain HTTP, and the visitor's address arrives in a header. The two blocks below set this up. Run them only if you have a load balancer. The test runs them last, with an nginx server in the same container standing in for a load balancer at `192.0.2.10`.
 
-**1. Your site on port 80.** The load balancer sends your site's traffic to nginx's port 80, so that server must now do what the port 443 server did: run ModSecurity, CRS and the plugin, and pass requests to your application. This replaces the site from step 7. Make sure only your load balancer can reach nginx, for example with a firewall rule or security group that lets in only its addresses. A client that reaches nginx directly could send its own `X-Forwarded-Proto` and `X-Forwarded-For`.
+**1. Your site on port 80.** The load balancer sends your site's traffic to nginx's port 80, so that server must now do what the port 443 server did: run ModSecurity, CRS and the plugin, and pass requests to your application. This replaces the site from step 7. ModSecurity cannot tell whether the client used TLS, so have the load balancer redirect plain HTTP to HTTPS, as the port 80 server in step 7 does. Make sure only your load balancer can reach nginx, for example with a firewall rule or security group that lets in only its addresses. A client that reaches nginx directly would skip the load balancer's TLS, and could send its own `X-Forwarded-Proto` and `X-Forwarded-For`.
 
 ```bash
 # On the server (behind a load balancer)
@@ -518,7 +508,6 @@ server {
     modsecurity on;
     modsecurity_rules_file /etc/modsecurity.d/setup.conf;
 
-    include snippets/web-bot-auth-guard-server.conf;
     include snippets/web-bot-auth-accept-signature.conf;
 
     location / {
@@ -531,27 +520,7 @@ server {
 EOF
 ```
 
-**2. The guard's TLS check.** nginx now receives plain HTTP, so the guard would refuse every signed request with 400. Build its `$wba_tls` map from a header that your load balancer always sets, replacing any value the client sent, as the comment in `web-bot-auth-guard.conf` shows. Most load balancers set `X-Forwarded-Proto` to `https` for a request that came in over TLS. The `sed` below changes the map's two lines, and `grep` prints the result:
-
-```bash
-# On the server (behind a load balancer)
-sed -i -e 's/^map \$https \$wba_tls {$/map $http_x_forwarded_proto $wba_tls {/' \
-  -e 's/^    on 1;$/    https 1;/' /etc/nginx/conf.d/web-bot-auth-guard.conf
-grep -A 3 '^map $http_x_forwarded_proto $wba_tls' /etc/nginx/conf.d/web-bot-auth-guard.conf
-```
-
-It prints:
-
-```nginx
-map $http_x_forwarded_proto $wba_tls {
-    default 0;
-    https 1;
-}
-```
-
-If it prints nothing, the file did not have the lines `sed` looks for: make the change by hand. Never build the map from a header a client can set: that would undo the check.
-
-**3. The visitor's address.** nginx's real-IP module swaps in the address your load balancer passes, but only for requests from addresses you trust. Put the settings at http level, as here in `/etc/nginx/conf.d/00-real-ip.conf`, so nginx swaps the address before ModSecurity reads it ([README, step 5](README.md#5-tls-load-balancers-and-the-guard)):
+**2. The visitor's address.** nginx's real-IP module swaps in the address your load balancer passes, but only for requests from addresses you trust. Put the settings at http level, as here in `/etc/nginx/conf.d/00-real-ip.conf`, so nginx swaps the address before ModSecurity reads it ([README, step 5](README.md#5-tls-and-load-balancers)):
 
 ```bash
 # On the server (behind a load balancer)
@@ -566,11 +535,11 @@ systemctl reload nginx
 
 Anyone you list in `set_real_ip_from` can claim any address, so list only your own load balancers. With `real_ip_recursive on`, nginx reads `X-Forwarded-For` from the right and takes the first address that is not one you trust. So a visitor who sends their own `X-Forwarded-For: 203.0.113.66` still shows up with their real address.
 
-**Check it.** Send the signed requests from [Check it works](#check-it-works) to your site's name, through the load balancer. They print `200`, and the `client_ip` in each new `wba.log` line is your machine's address, not the load balancer's. A signed request sent straight to nginx's port 80, around the load balancer, gets 400 from the guard. The test checks all of this, and that a signature made for another host name is refused there (`invalid/bad-signature`).
+**Check it.** Send the signed requests from [Check it works](#check-it-works) to your site's name, through the load balancer. They print `200`, and the `client_ip` in each new `wba.log` line is your machine's address, not the load balancer's. The test checks both, and that a signature made for another host name is refused through the load balancer (`invalid/bad-signature`).
 
 ## Go live
 
-**Verify real bots.** The test bot's key store was hand-made. For real bots you list the bots you recognise, and key sync fetches their keys: follow README [Set up step 2](README.md#2-list-the-bots-you-recognise) (`bots.yaml` and `agents.txt`) and [step 3](README.md#3-keep-their-keys-current) (key sync from cron or a systemd timer). On this server, key sync writes straight into the plugin's key store: give it `--out /etc/modsecurity.d/wba/keys/wba-keys.tsv`. It replaces the store by writing a new file and renaming it over the old one, and keeps its cache and history next to it. So the directory must be writable by the user key sync runs as (`wba` in the README's examples) and readable by `www-data`:
+**Verify real bots.** The test bot's key store came from `sign.ts init`. For real bots you list the bots you recognise, and key sync fetches their keys: follow README [Set up step 2](README.md#2-list-the-bots-you-recognise) (`bots.yaml` and `agents.txt`) and [step 3](README.md#3-keep-their-keys-current) (key sync from cron or a systemd timer). On this server, key sync writes straight into the plugin's key store: give it `--out /etc/modsecurity.d/wba/keys/wba-keys.tsv`. It replaces the store by writing a new file and renaming it over the old one, and keeps its cache and history next to it. So the directory must be writable by the user key sync runs as (`wba` in the README's examples) and readable by `www-data`:
 
 ```bash
 # On the server
@@ -580,7 +549,11 @@ chmod 750 /etc/modsecurity.d/wba/keys
 runuser -u www-data -- head -n 1 /etc/modsecurity.d/wba/keys/wba-keys.tsv
 ```
 
-Key sync's first run replaces the test bot's store with the keys of the bots you listed. For bots that do not sign yet, [Bot lists and policies](README.md#bot-lists-and-policies) checks them against their operators' address lists: on your own nginx, give `lists.ts` the plugins directory, `/etc/modsecurity.d/owasp-crs/plugins`, as `--out`. Its rules land there as `web-bot-auth-bots-before.conf`, a "before" file, so they have set `tx.bot_*` by the time your own `*-after.conf` rules run.
+Key sync's first run replaces the test bot's store with the keys of the bots you listed. For bots that do not sign yet, [Bot lists and policies](README.md#bot-lists-and-policies) checks them against their operators' address lists: on your own nginx, give `lists.ts` the plugins directory, `/etc/modsecurity.d/owasp-crs/plugins`, as `--out`. Its rules land there as `web-bot-auth-bots-before.conf`, a "before" file, so they have set `tx.bot_*` by the time your own `*-after.conf` rules run. Run `lists.ts` as root here: the plugins directory is owned by root, and its `--check 'nginx -t'` and `--reload 'systemctl reload nginx'` need root too.
+
+**Bun on the server.** Key sync and `lists.ts` run on this server, so it needs [Bun](https://bun.sh) 1.3 or newer (key sync also runs on Node 26; `lists.ts` needs Bun). Debian 13's `nodejs` package is Node 20.19 and cannot run them. Install Bun from its [GitHub release](https://github.com/oven-sh/bun/releases): download the archive for your architecture and the release's `SHASUMS256.txt`, check the archive against it (`sha256sum -c`), then unpack `bun` into `/usr/local/bin`. Never pipe an install script into a shell.
+
+**Replay counting** is off by default; recipes D and E use it ([README, Replay accounting](README.md#replay-accounting)). To turn it on here, make the directory the nginx workers can write, `install -d -o www-data -g www-data -m 700 /var/lib/wba/replay`, best on a filesystem of its own so filling it cannot fill anything else; set `tx.wba_replay_dir` to it (the commented-out rule 9534014 in `web-bot-auth-config.conf`); and run `wba-keysync/sweep.ts` on a timer, as the README describes.
 
 **Your own rules.** `recipes.conf` is examples. Remove `plugins/wba-recipes-after.conf` and put the rules you want in your own file, for example `plugins/site-wba-rules-after.conf`. Start from [Rule examples](README.md#rule-examples) and the four points in [Writing rules](README.md#writing-rules). Try a refusing rule with `pass,log` first, and watch what it matches before you switch it to `deny`. After each change, run `nginx -t && systemctl reload nginx`.
 
@@ -620,9 +593,8 @@ Specific to a hand-built nginx. The README's [Troubleshooting](README.md#trouble
 | `wba.log` says `unverified/engine-error` for every signed request | lua-openssl did not load | `lua5.3 -e 'require("openssl")'` must work; `openssl.so` belongs in `/usr/local/lib/lua/5.3/` (step 2) |
 | `wba.log` says `unverified/keystore-unavailable` | the key store is missing, or `www-data` cannot read it | `runuser -u www-data -- head -n 1 /etc/modsecurity.d/wba/keys/wba-keys.tsv` must print `# wba-keys v2` |
 | signed requests pass, but no line appears in `wba.log` | `www-data` cannot append to it | `chown www-data:adm /var/log/nginx/wba.log`. To see the reason, add `SecDebugLog /var/log/nginx/modsec_debug.log` and `SecDebugLogLevel 2` to `modsecurity.conf` and reload: it says `[wba] log line not written: ... Permission denied`. Remove both lines afterwards |
-| `400` for every signed request | they reach nginx over plain HTTP: over port 80, or from a load balancer that ends TLS | use HTTPS, or change the guard's `$wba_tls` map ([Behind a load balancer](#behind-a-load-balancer)) |
 | `curl` fails the TLS handshake (status `000`) | the catch-all refuses names it does not know, and an IP address sends no name | use the site's name; for a test, map it in `/etc/hosts` |
 | clients get `460` | `web-bot-auth-accept-signature.conf` is not included in that server block | include it (step 7), or change recipe A to `status:403` |
 | a recipe A refusal is in the audit log with no rules listed | expected with Debian's ModSecurity 3.0.14 and connector 1.0.3, for refusals answered through `web-bot-auth-accept-signature.conf` | find the rule in nginx's error log: `grep -F 'Access denied' /var/log/nginx/error.log` |
 | the audit log stops growing after rotation | it was rotated by renaming, and ModSecurity still writes to the renamed file | rotate it with `copytruncate` ([Go live](#go-live)); a restart of nginx makes ModSecurity open the new file |
-| CRS 4.30.0 refuses ordinary paths with rule 932260 | a CRS 4.30.0 false positive (README Troubleshooting) | put the README's `SecRuleUpdateTargetById 932260 "!REQUEST_FILENAME"` in a `plugins/*-after.conf` file |
+| CRS 4.30.0 refuses ordinary paths with rule 932260 | a CRS 4.30.0 false positive (README Troubleshooting) | put the README's `SecRuleUpdateTargetById 932260 "!REQUEST_FILENAME"` in a `plugins/*-after.conf` file; remove it once a CRS release includes [coreruleset#4842](https://github.com/coreruleset/coreruleset/pull/4842) |

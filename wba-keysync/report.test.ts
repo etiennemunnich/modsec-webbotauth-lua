@@ -29,7 +29,7 @@ test("traffic: verified requests per agent, the rest by status/reason; only line
     '{"event":"web-bot-auth","status":"unverified","reason":"unknown-agent","agent":null,"granted":false}',
     '{"event":"web-bot-auth","status":"verified","reason":"url-less","agent":null,"granted":false}',
     "127.0.0.1 - - [09/Oct/2026] \"GET / HTTP/1.1\" 200",
-    // A logged request header carrying the text is not the plugin's line (Forge F9).
+    // A logged request header carrying the text is not the plugin's line.
     'X-Forged: {"event":"web-bot-auth","status":"verified","reason":"","agent":"https://chatgpt.com/.well-known/http-message-signatures-directory","granted":true}',
     '{"event":"web-bot-auth","status":"verif',
   ].join("\n");
@@ -77,12 +77,12 @@ test("catalogue: every category defined, each bot with its operator's words, eve
   assert.match(md, /  - documentation <https:\/\/bot\.example\/about>: 200/);
   assert.match(md, /  - IP list <https:\/\/bot\.example\/ips\.json>: 3 ranges \\\(3 IPv4, 0 IPv6\\\), 2026-10-01/);
   assert.match(md, /  - reverse DNS bot\.example: documented; checking needs a forward-confirmed DNS lookup, which this project does not do yet \(planned: offline\)/);
-  assert.match(md, /^## Reverse DNS, and why not CRS's fake-bot plugin$/m);
-  assert.match(md, /never inside a request\. The project neither depends on nor integrates with fake-bot\./);
+  assert.match(md, /^## Reverse DNS$/m);
+  assert.match(md, /Reverse DNS is not built\. When it is, it will run offline in the sync tool and be reviewed, never inside a request\./);
   assert.match(md, /  - User-Agent `GBot`: a claim on its own/);
 });
 
-test("evidence: an entry that fails its own checks supports nothing, so it is never verified (Forge F1)", () => {
+test("evidence: an entry that fails its own checks supports nothing, so it is never verified", () => {
   const bad = { name: "a", ips: "http://not-https.example/ips.json", user_agent: "ABot", rdns: ["*.evil"] };
   const e = evidence(bad, checkEntries([bad]));
   assert.deepEqual([e.proofs, status(e)], [[], "unverified"]);
@@ -90,7 +90,7 @@ test("evidence: an entry that fails its own checks supports nothing, so it is ne
   assert.deepEqual(unfetched.proofs, [], "an IP list counts only once it loaded");
 });
 
-test("catalogue and render: text from a bots file or the network stays inert Markdown (Forge F5, F6)", () => {
+test("catalogue and render: text from a bots file or the network stays inert Markdown", () => {
   const evil = { name: "x\n## Injected heading", operator: "![x](https://evil.example/p.png)", category: "search",
     description: "a | b\n\n# head", note: "<script>", purpose: "search" as unknown as string[], user_agent: "U`A" };
   const evs = [evidence(evil, []), evidence({ name: "ok-bot", category: "search", user_agent: "OkBot" }, [])];
@@ -104,6 +104,6 @@ test("catalogue and render: text from a bots file or the network stays inert Mar
   assert.match(md, /^  ok-bot: \{ policy: log \}/m);
 });
 
-test("agentId: a jwks_uri is normalised the way the verifier logs it (Forge F8)", () => {
+test("agentId: a jwks_uri is normalised the way the verifier logs it", () => {
   assert.equal(agentId({ name: "j", wba: "https://Agent.Example:443/a/../jwks.json", wba_type: "jwks_uri" }), "https://agent.example/jwks.json");
 });

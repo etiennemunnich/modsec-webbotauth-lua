@@ -69,15 +69,11 @@ step "every documented reason is tested" bash lua/tests/reasons.sh
 if have bun; then
   step "query-param vectors are current (bun)" sh -c 'bun lua/tests/query-param/gen.ts | cmp -s - lua/tests/query-param/vectors.tsv'
   step "coding vectors agree with zlib (bun)" bun lua/tests/coding/gen.ts --check lua/tests/coding/vectors.tsv
-  step "key-sync (bun)" bun test ./wba-keysync/keysync.test.ts ./wba-keysync/proof.test.ts ./wba-keysync/sweep.test.ts ./wba-keysync/validate.test.ts ./wba-keysync/report.test.ts ./wba-keysync/sign.test.ts ./wba-keysync/agents.test.ts ./wba-keysync/lists.test.ts ./wba-keysync/robots.test.ts ./.githooks/scan.test.ts
-  # The issue forms testers see: the preview's overlay here, .github in a preview.
-  for d in preview/overlay/.github/ISSUE_TEMPLATE .github/ISSUE_TEMPLATE; do
-    [ -d "$d" ] && step "issue forms in $d" bun lua/tests/issue-forms.ts "$d"
-  done
-  # A preview snapshot exports cleanly from HEAD (not in a preview, which has no preview/).
-  [ -f preview/make-preview.sh ] && step "preview snapshot exports from HEAD" sh -c 'd=$(mktemp -d) && bash preview/make-preview.sh "$d/p" >/dev/null && rm -rf "$d"'
+  step "key-sync (bun)" bun test ./wba-keysync/keysync.test.ts ./wba-keysync/proof.test.ts ./wba-keysync/sweep.test.ts ./wba-keysync/validate.test.ts ./wba-keysync/report.test.ts ./wba-keysync/sign.test.ts ./wba-keysync/agents.test.ts ./wba-keysync/lists.test.ts ./wba-keysync/robots.test.ts
+  # The issue forms testers see.
+  step "issue forms in .github/ISSUE_TEMPLATE" bun lua/tests/issue-forms.ts .github/ISSUE_TEMPLATE
 else
-  skip "bun: query-param and coding vectors, key-sync"
+  skip "bun: query-param and coding vectors, key-sync, issue forms"
 fi
 if have node; then
   step "query-param vectors are current (node)" sh -c 'node --experimental-strip-types lua/tests/query-param/gen.ts 2>/dev/null | cmp -s - lua/tests/query-param/vectors.tsv'
@@ -88,7 +84,7 @@ else
 fi
 
 if [ "$LIVE" = 1 ]; then
-  if have "$DOCKER"; then
+  if have "${DOCKER##* }"; then  # the tool itself; DOCKER may be "sudo finch"
     step "live (image test stage, Wycheproof, live checks)" bash lua/tests/live/run.sh
     step "README Quick start, run as written" bash lua/tests/live/quickstart.sh
     if have bun; then step "registry: bots file, agents.ts, key sync, the WAF" bash lua/tests/live/registry.sh; else skip "bun: the registry path (registry.sh)"; fi

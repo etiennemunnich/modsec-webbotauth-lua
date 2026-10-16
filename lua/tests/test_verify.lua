@@ -1265,8 +1265,8 @@ expect(run(cd_req), "unverified", "digest-pending", "a covered Content-Digest sp
 expect(run(cd_req, { policy = STRICT }), "invalid", "malformed-digest", "strict: a covered digest's line alone does not parse")
 H.pass("RFC 9651 4.2 MAY as policy.strict_field_lines: Signature-Input, Signature-Agent and covered digests fail per line; clean splits still verify")
 
--- 17. Decided 2026-10-09 (independent review F1-F3): the site's own
--- names, RFC 9651 4.2's ignore branch by default, max age, strict expiry.
+-- 17. Decided 2026-10-09: the site's own names, RFC 9651 4.2's ignore branch
+-- by default, max age, strict expiry.
 local SITE = { authorities = { ["example.com"] = true } }
 expect(run(signed(), { policy = SITE }), "verified", "", "a signature for this site's name")
 local foreign = signed({ authority = "other.example", -- a signature made for another site, replayed here with its Host
@@ -1289,20 +1289,24 @@ expect(run(whole), "invalid", "unparsable-agent", "an unparsable Signature-Agent
 expect(run(whole, { policy = REJECT }), "invalid", "malformed-headers", "reject: malformed, so 400")
 H.pass("site names: own name verified, another site's refused, none configured unverified; draft-cavage and unparsable fields ignored by default, 400 only by choice")
 
--- 18. A replay counter lives until the last second its signature can verify,
--- so the store holds at most max_age of traffic (review finding: inodes).
-local function last_of(o, policy)
+-- 18. A replay counter is named by the signature's own expires, whatever the
+-- policy: with the grace or max_age in the name, the same statement under
+-- another server block's settings got a fresh counter. sweep.ts bounds how
+-- long the file stays.
+local function counter_of(o, policy)
     local pol = { replay_keys = true }
     for k, v in pairs(policy or {}) do pol[k] = v end
     local res = run(signed(o), { policy = pol })
     expect(res, "verified", "")
-    return res.replay[1].last
+    return res.replay[1].expires, res.replay[1].last
 end
-local long = { expires = NOW + 7200 }
-H.eq(last_of(long), NOW - 10 + 3600, "created + max_age, when sooner than expires")
-H.eq(last_of({}), NOW + 300, "expires, when sooner")
-H.eq(last_of({}, GRACE), NOW + 360, "expires plus the grace the operator chose")
-H.eq(last_of(long, { max_age = false }), NOW + 7200, "max_age off: expires")
-H.pass("replay counters named by the last second a signature over the base can verify")
+for _, case in ipairs({ { {}, {} }, { {}, GRACE }, { { expires = NOW + 7200 }, {} }, { { expires = NOW + 7200 }, { max_age = 600 } },
+                        { { expires = NOW + 7200 }, { max_age = false } }, { {}, { expiry_grace = 60, max_age = 600 } } }) do
+    local want = case[1].expires or NOW + 300
+    local got, last = counter_of(case[1], case[2])
+    H.eq(got, want, ("expires %d under grace %s, max_age %s"):format(want, tostring(case[2].expiry_grace), tostring(case[2].max_age)))
+    H.eq(last, nil, "no bound taken from the policy")
+end
+H.pass("replay counters named by the signature's own expires, the same under every grace and max_age")
 
 H.done("test_verify")

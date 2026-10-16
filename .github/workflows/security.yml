@@ -1,0 +1,62 @@
+# Security scan with ASH, AWS's Automated Security Helper
+# (https://github.com/awslabs/automated-security-helper), in local mode:
+# Bandit (Python), Semgrep (Python, TypeScript, Bash, Dockerfile, workflows),
+# Checkov (Dockerfile, GitHub Actions) and detect-secrets. A finding at MEDIUM
+# or above fails the job unless .ash/.ash.yaml suppresses it, by rule and place,
+# with a reason. ASH is pinned to the commit of its v3.7.1 tag. The reports are
+# kept as the "ash-reports" artifact for 14 days; the job summary shows the
+# table. It runs on every push, documents included (detect-secrets reads
+# them). A pull request from a branch of this repository is skipped: that
+# branch's push run scanned the same commit. The workflow files' own checks
+# (actionlint, zizmor) are lint-workflows.yml, run only when .github/ changes.
+name: security
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a branch or pull request cancels its older run; a main run
+# always finishes, so every main commit keeps its result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  ash:
+    name: ASH (Bandit, Semgrep, Checkov, detect-secrets)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install ASH v3.7.1
+        run: pip install "git+https://github.com/awslabs/automated-security-helper.git@af1206aff596f1288ad066828058b3011de2a998"
+      - name: Scan
+        # Not run: cfn-nag and cdk-nag (CloudFormation and CDK; there is none here),
+        # opengrep (Semgrep's fork, same rules; Semgrep runs), grype and syft
+        # (dependency vulnerabilities and SBOM; not installed on the runner yet).
+        # (In v3.7.1, "enabled: false" in .ash/.ash.yaml did not skip them.)
+        run: >-
+          ash --mode local
+          --exclude-scanners cfn-nag --exclude-scanners cdk-nag --exclude-scanners opengrep
+          --exclude-scanners grype --exclude-scanners syft
+      - name: Summary
+        if: always()
+        run: |
+          f=$(find .ash/ash_output/reports -name '*summary*.md' | head -1)
+          if [ -n "$f" ]; then cat "$f" >> "$GITHUB_STEP_SUMMARY"; else find .ash/ash_output -maxdepth 3 | head -50; fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: ash-reports
+          path: .ash/ash_output/
+          retention-days: 14

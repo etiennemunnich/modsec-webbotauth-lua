@@ -8,7 +8,8 @@
 // URL with type=jwks_uri when wba_type says so. A bot without `wba` cannot
 // sign, so it is left out and counted in the summary. Each line is checked
 // with key sync's own parser (keysync.ts parseAgent), so key sync accepts
-// every line written; a bad `wba` fails the run and nothing is written. Bots
+// every line written; a bad `wba` (one with a space in it included) or a bot
+// name validate.ts would refuse fails the run and nothing is written. Bots
 // that share a key source share one line (draft 5.5: an identifier is listed
 // once). With --out the file is written under a new name and renamed into
 // place, so key sync never reads half a file and a symlink there is replaced,
@@ -21,7 +22,7 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { WELL_KNOWN } from "./identifier.ts";
 import { parseAgent } from "./keysync.ts";
-import type { Bot } from "./validate.ts";
+import { nameProblem, type Bot } from "./validate.ts";
 
 class UsageError extends Error {}
 
@@ -37,9 +38,14 @@ export function agentsFromBots(bots: Bot[], source: string, only?: Set<string>):
   const withoutWba: string[] = [];
   for (const bot of bots) {
     if (only && !only.has(bot.name)) continue;
+    // A name goes into a comment line: one with a newline would add a line of its own.
+    const bad = nameProblem(bot.name);
+    if (bad) throw new Error(`${bad} (validate.ts checks every entry)`);
     if (!bot.wba) { withoutWba.push(bot.name); continue; }
+    // parseAgent splits at whitespace: "URL type=cimd" would change the agent's type.
+    if (typeof bot.wba !== "string" || /\s/.test(bot.wba)) throw new Error(`${bot.name}: wba must be one URL with no spaces (wba_type says the type)`);
     const type = bot.wba_type ?? "directory";
-    if (type !== "directory" && type !== "jwks_uri") throw new Error(`${bot.name}: wba_type must be directory or jwks_uri, not ${JSON.stringify(type)}`);
+    if (type !== "directory" && type !== "jwks_uri") throw new Error(`${bot.name}: wba_type must be directory or jwks_uri, not ${typeof type === "string" ? JSON.stringify(type).slice(0, 80) : typeof type}`);
     const agent = parseAgent(type === "jwks_uri" ? `${bot.wba} type=jwks_uri` : bot.wba);
     if (typeof agent === "string") throw new Error(`${bot.name}: wba ${JSON.stringify(bot.wba)}: ${agent}`);
     // A directory is written as its normalised origin (its identifier less the
