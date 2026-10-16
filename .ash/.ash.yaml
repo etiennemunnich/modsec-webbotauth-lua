@@ -28,13 +28,13 @@ global_settings:
         moves, this range stops matching and the scan fails until it is updated.
     - path: wba-keysync/keysync.ts
       rule_id: SECRET-BASE64-HIGH-ENTROPY-STRING
-      line_start: 44
-      line_end: 53
+      line_start: 43
+      line_end: 56
       reason: TEST_KEY_THUMBPRINTS, the same public list as verify.lua's (draft 6.8).
     - path: wba-keysync/keysync.ts
       rule_id: SECRET-BASE64-HIGH-ENTROPY-STRING
-      line_start: 150
-      line_end: 150
+      line_start: 157
+      line_end: 157
       reason: The base64url alphabet (RFC 4648 5), used to check a final character.
     - path: lua/wba/README.md
       rule_id: SECRET-*
