@@ -539,7 +539,7 @@ lua/tests/interop/interop.sh
 
 `LOGS` is any command that prints your WAF's log for the last few minutes. For example: `docker logs --since 2m waf`, `kubectl logs deploy/waf --since=2m`, `journalctl -u nginx --since -2min -o cat` or `tail -n 5000 /var/log/nginx/wba.log`.
 
-The run sends 7 requests to `/.well-known/wba-interop/<run>/…`: genuine ones, which must verify, and a tampered one, an expired one and one signed with an unpublished key, which must not. Your rules may refuse some of them: the check reads only the logged result.
+The run sends 7 requests to `/.well-known/wba-interop/<run>/...`: genuine ones, which must verify, and a tampered one, an expired one and one signed with an unpublished key, which must not. Your rules may refuse some of them: the check reads only the logged result.
 
 You can serve the key set at a site's well-known directory instead, and list it as that origin. Then two more cases run: the legacy `Signature-Agent` form and Stytch's recipe.
 
