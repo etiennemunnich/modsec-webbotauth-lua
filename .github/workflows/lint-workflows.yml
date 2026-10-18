@@ -45,8 +45,8 @@ jobs:
       # zizmor: template injection, credentials left in .git/config, unpinned
       # or impostor actions, dangerous triggers. The action installs zizmor
       # from a hash-locked wheel; any finding fails the job and shows as an
-      # annotation. (Code scanning upload is off: a private repository on
-      # GitHub Free has none.) Dependabot bumps the action; the zizmor
+      # annotation. (Code scanning SARIF upload is off: advanced-security
+      # is false below.) Dependabot bumps the action; the zizmor
       # version below is bumped by hand. It runs even if actionlint failed.
       - name: zizmor
         if: ${{ !cancelled() }}
