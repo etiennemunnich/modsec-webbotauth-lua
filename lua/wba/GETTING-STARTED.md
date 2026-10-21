@@ -575,6 +575,9 @@ cat > /etc/logrotate.d/modsecurity-audit <<'EOF'
     copytruncate
 }
 EOF
+# logrotate refuses a config that is group- or world-writable (for example
+# when cat inherits a 0000 umask from docker exec). Force a safe mode.
+chmod 644 /etc/logrotate.d/modsecurity-audit
 ```
 
 The audit log holds raw `Signature` headers ([README, Other logs](README.md#other-logs)): keep it, and its rotated copies, no longer than you need.
@@ -597,4 +600,5 @@ Specific to a hand-built nginx. The README's [Troubleshooting](README.md#trouble
 | clients get `460` | `web-bot-auth-accept-signature.conf` is not included in that server block | include it (step 7), or change recipe A to `status:403` |
 | a recipe A refusal is in the audit log with no rules listed | expected with Debian's ModSecurity 3.0.14 and connector 1.0.3, for refusals answered through `web-bot-auth-accept-signature.conf` | find the rule in nginx's error log: `grep -F 'Access denied' /var/log/nginx/error.log` |
 | the audit log stops growing after rotation | it was rotated by renaming, and ModSecurity still writes to the renamed file | rotate it with `copytruncate` ([Go live](#go-live)); a restart of nginx makes ModSecurity open the new file |
+| `logrotate` says `Ignoring /etc/logrotate.d/modsecurity-audit because it is writable by group or others` | the file was created with a permissive umask (common under `docker exec` when the daemon's umask is `0000`) | `chmod 644 /etc/logrotate.d/modsecurity-audit` ([Go live](#go-live)) |
 | CRS 4.30.0 refuses ordinary paths with rule 932260 | a CRS 4.30.0 false positive (README Troubleshooting) | put the README's `SecRuleUpdateTargetById 932260 "!REQUEST_FILENAME"` in a `plugins/*-after.conf` file; remove it once a CRS release includes [coreruleset#4842](https://github.com/coreruleset/coreruleset/pull/4842) |
