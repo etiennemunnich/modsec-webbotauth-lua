@@ -34,15 +34,26 @@ for c in "${cases[@]}"; do
   cp "$REPO/$file" "$COPY/$file"
   perl -0pi -e "$expr" "$COPY/$file"
   if cmp -s "$REPO/$file" "$COPY/$file"; then echo "STALE   $name: the substitution matched nothing ($file changed?)"; continue; fi
-  out=$(bash "$COPY/lua/tests/live/ftw.sh" 2>&1)
-  failed=$(printf '%s\n' "$out" | grep -oE 'running [0-9]+-[0-9]+: - [0-9]+-[0-9]+ failed' | awk '{print $2}' | tr -d ':' | tr '\n' ' ')
-  if printf '%s\n' "$out" | grep -q 'Error: failed to find'; then
-    echo "ERROR   $name: go-ftw lost its log markers"
-  elif [[ " $failed" == *" $want "* ]]; then
-    echo "CAUGHT  $name: failed ${failed% }"; CAUGHT=$((CAUGHT + 1))
-  else
-    echo "MISSED  $name: $want did not fail (failed: ${failed:-none})"
-  fi
+  # One retry when go-ftw loses its log markers (seen under Finch CI load).
+  # A miss (wanted test still green) still fails the suite — no weakening.
+  attempt=1
+  while true; do
+    out=$(bash "$COPY/lua/tests/live/ftw.sh" 2>&1)
+    failed=$(printf '%s\n' "$out" | grep -oE 'running [0-9]+-[0-9]+: - [0-9]+-[0-9]+ failed' | awk '{print $2}' | tr -d ':' | tr '\n' ' ')
+    if printf '%s\n' "$out" | grep -q 'Error: failed to find'; then
+      if [ "$attempt" -eq 1 ]; then
+        echo "RETRY   $name: go-ftw lost its log markers; one more try"
+        attempt=2
+        continue
+      fi
+      echo "ERROR   $name: go-ftw lost its log markers"
+    elif [[ " $failed" == *" $want "* ]]; then
+      echo "CAUGHT  $name: failed ${failed% }"; CAUGHT=$((CAUGHT + 1))
+    else
+      echo "MISSED  $name: $want did not fail (failed: ${failed:-none})"
+    fi
+    break
+  done
   cp "$REPO/$file" "$COPY/$file"
 done
 echo "== $CAUGHT of ${#cases[@]} planted bugs caught"
