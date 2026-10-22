@@ -29,14 +29,14 @@ LB_PORT=18998
 # shellcheck disable=SC2034 # read by debian-page.sh, which this script sources
 RUN_OPTS=(-p "$LB_PORT:8443" --cap-add NET_ADMIN)
 # Every check below prints one PASS line, and finish fails unless exactly this
-# many passed: a check that quietly did not run fails the run. 53 = 13 for
+# many passed: a check that quietly did not run fails the run. 54 = 13 for
 # what the page printed, 6 for the server, 10 for the body requests (5 per
-# HTTP version), 6 for paranoia level 4 (its one optional block included), 5
-# for log rotation and 13 behind the load balancer (its two blocks included).
-# Change it only together with the checks, or the page's optional and load
-# balancer blocks.
+# HTTP version), 6 for paranoia level 4 (its one optional block included), 6
+# for log rotation (including the logrotate.d mode check) and 13 behind the
+# load balancer (its two blocks included). Change it only together with the
+# checks, or the page's optional and load balancer blocks.
 # shellcheck disable=SC2034 # read by debian-page.sh's finish
-EXPECTED_PASSES=53
+EXPECTED_PASSES=54
 # shellcheck source=debian-page.sh
 . "$HERE/debian-page.sh"
 
@@ -152,6 +152,10 @@ machine "curl -sk -o /dev/null https://example.com/agents/hello"
 sleep 1
 check "renamed audit log, then nginx -s reload: the new file stays empty" "$(server 'wc -c < /var/log/nginx/modsec_audit.json' | tr -d ' ')" 0
 server 'mv /var/log/nginx/modsec_audit.moved /var/log/nginx/modsec_audit.json'
+# The page's chmod 644: logrotate ignores a group- or world-writable config
+# (docker exec often inherits dockerd's 0000 umask, so cat alone can leave 0666).
+check "logrotate.d/modsecurity-audit is not group- or world-writable" \
+  "$(server 'stat -c %a /etc/logrotate.d/modsecurity-audit' | tr -d ' ')" 644
 # Rotate with the page's configuration and Debian's own (postrotate cannot
 # signal nginx here: the image's policy-rc.d refuses it, so no signal at all).
 server 'logrotate -f /etc/logrotate.d/nginx /etc/logrotate.d/modsecurity-audit'
