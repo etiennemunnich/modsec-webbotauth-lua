@@ -8,18 +8,21 @@
 # or image build reads them (the scans and lints have security.yml and
 # lint-workflows.yml). lua/wba/README.md is not among them: run_all.sh checks
 # its recipes against recipes.conf and the live job runs its Quick start.
-# GETTING-STARTED.md is: getting-started.sh needs network and runs locally.
-# The host suites run through lua/tests/run_all.sh, so CI and a laptop run the
-# same thing. The container suites (the image's test stage, the live checks, the
-# README Quick start, the real-IP checks, the go-ftw tests, the CRS paranoia
-# levels) take the container CLI from $DOCKER and run twice: on Finch, the
-# scripts' default (its Ubuntu package, pinned in
-# .github/scripts/install-finch.sh), and on Docker, the runner's own. The
-# version matrix across CRS images is its own workflow (crs-matrix.yml).
-# Third-party actions are pinned to commit SHAs (tag in the comment), and no
-# checkout keeps the job's token in .git/config (persist-credentials: false):
-# nothing here pushes. Every job has a timeout a few times its usual length, so
-# a hung run cannot spend the month's minutes.
+# GETTING-STARTED.md is not ignored: the live job runs getting-started.sh on
+# Docker (Debian mirrors, GitHub, coreruleset.org). The host suites run through
+# lua/tests/run_all.sh, so CI and a laptop run the same thing. The container
+# suites (the image's test stage, the live checks, the README Quick start, the
+# real-IP checks, the go-ftw tests and planted-bug meta-check, the registry and
+# bot-lists paths, GETTING-STARTED.md on Docker, the CRS paranoia levels) take
+# the container CLI from $DOCKER and run twice: on Finch, the scripts' default
+# (its Ubuntu package, pinned in .github/scripts/install-finch.sh), and on
+# Docker, the runner's own — except getting-started.sh, which runs on Docker
+# only (network-heavy Debian build). The version matrix across CRS images is
+# its own workflow (crs-matrix.yml). Third-party actions are pinned to commit
+# SHAs (tag in the comment), and no checkout keeps the job's token in
+# .git/config (persist-credentials: false): nothing here pushes. Every job has
+# a timeout a few times its usual length, so a hung run cannot spend the
+# month's minutes.
 name: wba
 
 on:
@@ -35,7 +38,6 @@ on:
       - lua/wba/DESIGN.md
       - lua/wba/HOW-IT-WORKS.md
       - lua/wba/TESTING.md
-      - lua/wba/GETTING-STARTED.md
       - lua/wba/FOR-BOT-OPERATORS.md
       - wba-keysync/BOTS.md
       - lua/wba/evidence/**
@@ -93,10 +95,12 @@ jobs:
   # The go-ftw tests and the paranoia sweep each build the image again from
   # the same Dockerfile, so after run.sh they take the layers from the cache.
   live:
-    name: Live on ${{ matrix.runtime }} (image test stage, live checks, real IP, go-ftw, paranoia levels)
+    name: Live on ${{ matrix.runtime }} (image, live, real IP, ftw, registry, bot lists, paranoia)
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # Extra suites (registry, bot lists, ftw-planted, Debian getting-started on
+    # Docker) add a few minutes on top of run.sh; keep headroom for cold pulls.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -129,5 +133,17 @@ jobs:
         run: bash lua/tests/live/real-ip.sh
       - name: go-ftw tests in tests/regression, signed by a test bot (lua/tests/live/ftw.sh)
         run: bash lua/tests/live/ftw.sh
+      - name: go-ftw planted bugs each caught by their own test (lua/tests/live/ftw-planted.sh)
+        run: bash lua/tests/live/ftw-planted.sh
+      - name: Registry path bots file, agents.ts, key sync, the WAF (lua/tests/live/registry.sh)
+        run: bash lua/tests/live/registry.sh
+      - name: Bot lists bots file, lists.ts, the WAF (lua/tests/live/bot-lists.sh)
+        run: bash lua/tests/live/bot-lists.sh
+      - name: GETTING-STARTED.md on Debian 13, run as written (lua/tests/live/getting-started.sh)
+        # Docker only: network-heavy (Debian mirrors, GitHub, CRS); Finch live
+        # already covers the CRS image path. Guide edits still trigger this job
+        # because GETTING-STARTED.md is not in paths-ignore.
+        if: matrix.runtime == 'docker'
+        run: bash lua/tests/live/getting-started.sh
       - name: CRS paranoia levels 1 to 4 accept what the verifier accepts (lua/tests/live/paranoia.sh)
         run: bash lua/tests/live/paranoia.sh

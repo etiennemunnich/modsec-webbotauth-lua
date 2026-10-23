@@ -14,7 +14,8 @@ lua/tests/run_all.sh --live       # plus the image test stage, the live suite, t
 DOCKER=docker lua/tests/run_all.sh --live        # the same on Docker
 DOCKER="sudo finch" lua/tests/run_all.sh --live  # on Linux, where Finch runs as root
 
-# Not in run_all.sh:
+# Not in run_all.sh (CI's live job still runs paranoia.sh and ftw-planted.sh;
+# getting-started.sh is in CI on Docker only; see Continuous integration):
 bash lua/tests/live/paranoia.sh      # CRS paranoia levels 1 to 4, HTTP/1.1 and HTTP/2
 bash lua/tests/live/matrix.sh        # the live suite on every image in lua/tests/live/crs-images.txt
 bash lua/tests/live/ftw-planted.sh   # eight bugs planted in a copy; each go-ftw test must catch its own
@@ -37,7 +38,7 @@ What each part needs:
 
 ## Continuous integration
 
-Five workflows in `.github/workflows/` run the same scripts on GitHub's Ubuntu runners. `wba.yml` runs on every push and pull request that changes more than documents: a `suites` job (`run_all.sh` on Lua 5.3, planted bugs in two shards, then the Lua suites on 5.4, under a Latin-1 locale) and a `live` job on Finch and again on Docker (`run.sh`, the Quick start, the real-IP checks, the go-ftw tests, the paranoia levels). `security.yml` runs ASH (Bandit, Semgrep, Checkov, detect-secrets) on every push; a finding at MEDIUM or above fails unless `.ash/.ash.yaml` suppresses it with a reason. `lint-workflows.yml` runs actionlint and zizmor when `.github/` changes. `crs-matrix.yml` runs the version matrix monthly, when the image list or the `Dockerfile` changes, or by hand. `interop.yml` runs by hand.
+Five workflows in `.github/workflows/` run the same scripts on GitHub's Ubuntu runners. `wba.yml` runs on every push and pull request that changes more than documents: a `suites` job (`run_all.sh` on Lua 5.3, planted bugs in two shards, then the Lua suites on 5.4, under a Latin-1 locale) and a `live` job on Finch and again on Docker (`run.sh`, the Quick start, the real-IP checks, the go-ftw tests, `ftw-planted.sh`, the registry and bot-lists paths, the paranoia levels, and on Docker only `getting-started.sh` for [GETTING-STARTED.md](GETTING-STARTED.md)). Guide-only edits to that page still start `wba` (it is not in `paths-ignore`). `security.yml` runs ASH (Bandit, Semgrep, Checkov, detect-secrets) on every push; a finding at MEDIUM or above fails unless `.ash/.ash.yaml` suppresses it with a reason. `lint-workflows.yml` runs actionlint and zizmor when `.github/` changes. `crs-matrix.yml` runs the version matrix monthly, when the image list or the `Dockerfile` changes, or by hand. `interop.yml` runs by hand.
 
 ## What is proven, and how
 
