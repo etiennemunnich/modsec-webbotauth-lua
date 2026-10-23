@@ -1,5 +1,20 @@
 # Changelog
 
+Versioning: git tags are `v0.1.0-alpha.N`. Every ModSecurity rule this plugin ships (and the bot-list rules `lists.ts` writes) carries `ver:'web-bot-auth-plugin/0.1.0'` for the whole 0.1.0 alpha line. After a version bump merges to `main`, a maintainer tags that commit and publishes a GitHub Release from this file. There is no automated release workflow.
+
+## v0.1.0-alpha.2 (2026-10-23)
+
+Second public alpha, for testing on test sites. Not for production use. The rule version string stays `web-bot-auth-plugin/0.1.0`.
+
+Changes since v0.1.0-alpha.1:
+
+- Hardening: the nginx guard that answered 400 for signed requests over plain HTTP or with an absolute-form request line is gone. Signed plain HTTP verifies (draft 6.1 is a declared deviation); absolute-form vs `Host` is a known limit. Replay counters follow the signature's own expiry; an internal error clears grant and identity; the JSON log line includes the `Host` header.
+- Key sync and bot lists: `--allow-private-origin` never covers a CIMD document's `jwks_uri` hop; `lists.ts` takes `--allow-private-url` (exact URL); control characters are stripped from key sync output; a bad `agents.txt` line leaves the store untouched.
+- Docs rewritten for a public alpha (operator README, GETTING-STARTED, TESTING, SECURITY, issue forms). No private-repo wording in workflow comments.
+- CI: suites plus live on Finch and Docker (`run.sh`, Quick start, real-IP, go-ftw, ftw-planted, registry, bot-lists, paranoia; getting-started on Docker only), ASH security scan, workflow lint, monthly CRS matrix, manual interop.
+- GETTING-STARTED: `chmod 644` after writing the logrotate config so a loose Docker-exec umask does not make logrotate ignore the file.
+- Dependabot: GitHub Actions pin bumps.
+
 ## v0.1.0-alpha.1 (2026-10-12)
 
 First public alpha, for testing on test sites. Not for production use.

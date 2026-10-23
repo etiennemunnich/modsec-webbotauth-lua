@@ -1,6 +1,6 @@
 # Web Bot Auth for ModSecurity
 
-> **Alpha (v0.1.0-alpha.1): do not use this in production yet.** Test it on a test site first. Rule IDs, settings and log fields may still change before the first release ([Known limits](#known-limits)). Licensed under the Apache License 2.0.
+> **Alpha (v0.1.0-alpha.2): do not use this in production yet.** Test it on a test site first. Rule IDs, settings and log fields may still change before the first release ([Known limits](#known-limits)). Licensed under the Apache License 2.0.
 
 This project tells your WAF which bots a request really comes from. It runs inside ModSecurity v3 with the OWASP Core Rule Set (CRS), and has two parts:
 
