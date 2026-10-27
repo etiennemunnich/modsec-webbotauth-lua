@@ -8,12 +8,12 @@
 #       -e BACKEND=http://your-app:8080 crs-wba
 # README.md, Quick start, runs this end to end with a test bot.
 
-# Base image: ModSecurity 3.0.17, CRS 4.30.0, nginx 1.30.5, Debian OpenSSL
+# Base image: ModSecurity 3.0.17, CRS 4.30.0, nginx 1.30.6, Debian OpenSSL
 # 3.5.7-1~deb13u3 (OpenSSL's August and September 2026 fixes backported). The
 # digest is the multi-arch index; TESTING.md names the build each result was
 # measured on. Any other tag can be passed with --build-arg CRS_IMAGE=...; the
 # version matrix does that for every stable release of the last 12 months.
-ARG CRS_IMAGE=owasp/modsecurity-crs:4.30.0-nginx-202610051210@sha256:133267aa811e1a57a23b52ef04b3c30e802bcbe5454588f6d6af1f69f4b2b667
+ARG CRS_IMAGE=owasp/modsecurity-crs:4.30.0-nginx-202610180210@sha256:7698c48a41a43138ae317feeec964d1515b861cc1d9e50617bc1cdfe9f314e1d
 
 # Build stage: compilers never reach the runtime image. lua-openssl 0.11.1
 # (MIT), pinned by commit; its submodules are pinned by that commit. It links

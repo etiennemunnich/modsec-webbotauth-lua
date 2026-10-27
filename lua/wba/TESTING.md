@@ -2,7 +2,7 @@
 
 "Tested" here means: every layer is checked against something other than this code's own output. Signatures are made by openssl, WebCrypto or the reference signer, never by the verifier; parsers run against the standards' own corpora and examples; and the whole plugin runs inside a real CRS nginx container, where every outcome ModSecurity logs is asserted. The tests validate outcomes: which status and reason a request gets, which rule refused it, what was logged. Timing is never a test result; a few generous ceilings exist only to catch a path that grows out of proportion ([Budgets the tests enforce](#budgets-the-tests-enforce)).
 
-Every count on this page is from one run on 2026-10-12, on Finch on macOS (Apple silicon), on the base image the `Dockerfile` pins (`owasp/modsecurity-crs:4.30.0-nginx-202610051210`: ModSecurity 3.0.17, CRS 4.30.0). Docker (`DOCKER=docker`) last ran the full set on 2026-10-10, on an earlier build of this plugin.
+Every count on this page is from one run on 2026-10-12, on Finch on macOS (Apple silicon), on `owasp/modsecurity-crs:4.30.0-nginx-202610051210` (ModSecurity 3.0.17, CRS 4.30.0), the pin at that time. The `Dockerfile` now pins `4.30.0-nginx-202610180210` (same ModSecurity and CRS; nginx 1.30.6). Docker (`DOCKER=docker`) last ran the full set on 2026-10-10, on an earlier build of this plugin.
 
 ## Run the tests
 
@@ -38,7 +38,7 @@ What each part needs:
 
 ## Continuous integration
 
-Five workflows in `.github/workflows/` run the same scripts on GitHub's Ubuntu runners. `wba.yml` runs on every push and pull request that changes more than documents: a `suites` job (`run_all.sh` on Lua 5.3, planted bugs in two shards, then the Lua suites on 5.4, under a Latin-1 locale) and a `live` job on Finch and again on Docker (`run.sh`, the Quick start, the real-IP checks, the go-ftw tests, `ftw-planted.sh`, the registry and bot-lists paths, the paranoia levels, and on Docker only `getting-started.sh` for [GETTING-STARTED.md](GETTING-STARTED.md)). Guide-only edits to that page still start `wba` (it is not in `paths-ignore`). `security.yml` runs ASH (Bandit, Semgrep, Checkov, detect-secrets) on every push; a finding at MEDIUM or above fails unless `.ash/.ash.yaml` suppresses it with a reason. `lint-workflows.yml` runs actionlint and zizmor when `.github/` changes. `crs-matrix.yml` runs the version matrix monthly, when the image list or the `Dockerfile` changes, or by hand. `interop.yml` runs by hand.
+Five workflows in `.github/workflows/` run the same scripts on GitHub's Ubuntu runners. `wba.yml` runs on every push and pull request that changes more than documents: a `suites` job (`run_all.sh` on Lua 5.3, planted bugs in two shards, then the Lua suites on 5.4, under a Latin-1 locale) and a `live` job on Finch and again on Docker (`run.sh`, the Quick start, the real-IP checks, the go-ftw tests, `ftw-planted.sh`, the registry and bot-lists paths, the paranoia levels, and on Docker only `getting-started.sh` for [GETTING-STARTED.md](GETTING-STARTED.md)). Guide-only edits to that page still start `wba` (it is not in `paths-ignore`). `security.yml` runs ASH (Bandit, Semgrep, Checkov, detect-secrets) on every push; a finding at MEDIUM or above fails unless `.ash/.ash.yaml` suppresses it with a reason. `lint-workflows.yml` runs actionlint and zizmor when `.github/` changes. `crs-matrix.yml` runs the version matrix monthly, when the image list or the `Dockerfile` changes, or by hand; on a schedule or main-path push failure it opens or comments on one open issue labeled `crs-matrix`. `interop.yml` runs by hand.
 
 ## What is proven, and how
 
@@ -197,13 +197,13 @@ The matrix last ran on 2026-10-11, on an earlier build of this plugin, when the 
 | `4.28.0-nginx-202608131208` | 3.0.16 | 4.28.0 |
 | `4.29.0-nginx-202609241109` | 3.0.16 | 4.29.0 |
 | `4.29.0-nginx-202609301109` | 3.0.17 | 4.29.0 |
-| `4.30.0-nginx-202610051210` | 3.0.17 | 4.30.0 |
+| `4.30.0-nginx-202610180210` | 3.0.17 | 4.30.0 |
 | `3.3.10-nginx-202609241109-lts` | 3.0.16 | 3.3.10 |
 | `4.25.1-nginx-202609241109-lts` | 3.0.16 | 4.25.1 |
 | `3.3.10-nginx-202609301109-lts` | 3.0.17 | 3.3.10 |
 | `4.25.1-nginx-202609301109-lts` | 3.0.17 | 4.25.1 |
-| `3.3.10-nginx-202610051210-lts` | 3.0.17 | 3.3.10 |
-| `4.25.2-nginx-202610051210-lts` | 3.0.17 | 4.25.2 |
+| `3.3.10-nginx-202610180210-lts` | 3.0.17 | 3.3.10 |
+| `4.25.2-nginx-202610180210-lts` | 3.0.17 | 4.25.2 |
 
 Every image ships ModSecurity-nginx v1.0.4, so the absolute-form results in [Live](#live) apply to all of them. `matrix.sh` removes every image it builds or pulls, and the build cache, after each row; `KEEP_IMAGES=1` keeps them.
 
