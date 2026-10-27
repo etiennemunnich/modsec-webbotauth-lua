@@ -1,6 +1,6 @@
 # Getting started: nginx, ModSecurity, CRS and Web Bot Auth
 
-> **Alpha: do not use this in production yet.** This is v0.1.0-alpha.1 ([README](README.md)). Try it on a test server first.
+> **Alpha: do not use this in production yet.** This is v0.1.0-alpha.2 ([README](README.md)). Try it on a test server first.
 
 At the end of this page you have nginx on Debian 13 (trixie) with ModSecurity v3, the OWASP Core Rule Set (CRS) 4.30.0 and this plugin. An unsigned request to a bot-only path is refused and asked for a signature. A request signed by a test bot is verified, passed to your application and logged.
 
@@ -26,7 +26,7 @@ There are two ways to run the plugin:
 
 ## Before you start
 
-- **A server and your machine.** A Debian 13 server where you are root, with a copy of this repository at `/opt/web-bot-auth` (the commands use that path). To get it there, clone the release on your machine with `git clone --branch v0.1.0-alpha.1 https://github.com/etiennemunnich/modsec-webbotauth-lua.git`, then copy it to the server with `scp -r modsec-webbotauth-lua root@example.com:/opt/web-bot-auth`. Your own machine needs this repository and [Bun](https://bun.sh) (or Node 26: type `node` for `bun`) to sign test requests.
+- **A server and your machine.** A Debian 13 server where you are root, with a copy of this repository at `/opt/web-bot-auth` (the commands use that path). To get it there, clone the release on your machine with `git clone --branch v0.1.0-alpha.2 https://github.com/etiennemunnich/modsec-webbotauth-lua.git`, then copy it to the server with `scp -r modsec-webbotauth-lua root@example.com:/opt/web-bot-auth`. Your own machine needs this repository and [Bun](https://bun.sh) (or Node 26: type `node` for `bun`) to sign test requests.
 - **Your site's name.** The page uses `example.com`. Replace it everywhere with your own name.
 - **TLS.** Serve signed requests over HTTPS. A signature does not cover every header, so over plain HTTP anyone on the path could change the parts it does not cover (the Web Bot Auth draft, draft-ietf-webbotauth-httpsig-protocol, section 6.1: clients should use TLS or equivalent transport security). Step 6 makes a self-signed certificate so you can test now, and step 7 redirects plain HTTP for your name to HTTPS. Production uses a real certificate, for example from your CA or Let's Encrypt.
 - **The clock.** Keep the server's clock in sync with NTP (for example `systemd-timesyncd` or `chrony`). A signature may be dated up to 60 seconds ahead of your clock and expires exactly at its `expires` time.
