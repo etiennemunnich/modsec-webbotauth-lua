@@ -11,7 +11,7 @@
 #   CRS_IMAGE=owasp/modsecurity-crs:<tag> lua/tests/live/collections-probe.sh
 set -euo pipefail
 DOCKER=${DOCKER:-finch}
-IMG=${CRS_IMAGE:-owasp/modsecurity-crs:4.30.0-nginx-202610051210}
+IMG=${CRS_IMAGE:-owasp/modsecurity-crs:4.30.0-nginx-202610180210}
 PORT=${PORT:-18897}
 N=${N:-200}
 NAME=wba-collections-probe-$$

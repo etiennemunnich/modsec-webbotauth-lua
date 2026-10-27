@@ -8,6 +8,9 @@
 # 202609241109 builds (v3.0.16) kept, so both engine versions stay covered.
 # 2026-10-10: the 202610051210 builds added (CRS 4.30.0 and 4.25.2, fixing three
 # rule bypasses; Debian OpenSSL 3.5.7-1~deb13u3).
+# 2026-10-27: the 202610180210 builds replace 202610051210 for 4.30.0 and the
+# matching LTS tags (still ModSecurity v3.0.17; nginx 1.30.6). Older dual-engine
+# LTS stamps (202609241109 / 202609301109) kept for ModSecurity coverage.
 3.3.8-nginx-202603150103
 3.3.9-nginx-202606290906
 3.3.10-nginx-202609230209
@@ -25,10 +28,10 @@
 4.28.0-nginx-202608131208
 4.29.0-nginx-202609241109
 4.29.0-nginx-202609301109
-4.30.0-nginx-202610051210
+4.30.0-nginx-202610180210
 3.3.10-nginx-202609241109-lts
 4.25.1-nginx-202609241109-lts
 3.3.10-nginx-202609301109-lts
 4.25.1-nginx-202609301109-lts
-3.3.10-nginx-202610051210-lts
-4.25.2-nginx-202610051210-lts
+3.3.10-nginx-202610180210-lts
+4.25.2-nginx-202610180210-lts

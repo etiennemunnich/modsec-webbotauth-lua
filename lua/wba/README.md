@@ -89,7 +89,7 @@ finch rm -f waf && rm -rf wba-demo
 
 ### What you need
 
-- The official CRS nginx image, `owasp/modsecurity-crs:*-nginx-*` (Debian). The [`Dockerfile`](Dockerfile) pins `4.30.0-nginx-202610051210` by digest. [TESTING.md](TESTING.md#version-matrix) records the results on every CRS release of the last 12 months (ModSecurity 3.0.14 to 3.0.17, CRS 3.3.8 to 4.30.0). The Alpine images do not work: the Dockerfile uses `apt-get`.
+- The official CRS nginx image, `owasp/modsecurity-crs:*-nginx-*` (Debian). The [`Dockerfile`](Dockerfile) pins `4.30.0-nginx-202610180210` by digest. [TESTING.md](TESTING.md#version-matrix) records the results on every CRS release of the last 12 months (ModSecurity 3.0.14 to 3.0.17, CRS 3.3.8 to 4.30.0). The Alpine images do not work: the Dockerfile uses `apt-get`.
 - Or your own nginx with libmodsecurity 3.0.14 or later built with Lua 5.3, ModSecurity-nginx 1.0.x and CRS. See [Your own nginx](#your-own-nginx), and [GETTING-STARTED.md](GETTING-STARTED.md) for every step on Debian 13.
 - HTTPS for signed traffic: a signature does not cover every part of a request ([step 5](#5-tls-and-load-balancers)). The image serves TLS on port 8443.
 - Bun 1.3 or Node 26 wherever the `wba-keysync` tools run. Node 26 runs `cli.ts` (key sync), `sign.ts` and `sweep.ts`. `validate.ts`, `agents.ts`, `report.ts`, `lists.ts`, `robots.ts` and [`lua/tests/interop/interop.sh`](../tests/interop/interop.sh) need Bun.
@@ -119,7 +119,7 @@ Every file you set up or may change, in the order you meet them. "Plugins" is th
 ```bash
 finch build -f lua/wba/Dockerfile -t crs-wba .
 # another CRS release:
-finch build -f lua/wba/Dockerfile --build-arg CRS_IMAGE=owasp/modsecurity-crs:4.25.2-nginx-202610051210-lts -t crs-wba .
+finch build -f lua/wba/Dockerfile --build-arg CRS_IMAGE=owasp/modsecurity-crs:4.25.2-nginx-202610180210-lts -t crs-wba .
 ```
 
 On top of the CRS image, the build adds [lua-openssl](https://github.com/zhaozg/lua-openssl) 0.11.1 (compiled in a separate stage against the image's own OpenSSL, so no compiler ends up in the image you run), the rules as a CRS "before" plugin, the settings file with every setting commented out, the nginx file for [`Accept-Signature`](#asking-for-a-signature) responses, and `/var/lib/wba/replay` for [replay accounting](#replay-accounting).

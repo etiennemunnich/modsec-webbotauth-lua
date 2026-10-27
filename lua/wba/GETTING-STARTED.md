@@ -13,7 +13,7 @@ There are two ways to run the plugin:
 
 | | The image | Debian 13 (this page), as tested 12 October 2026, with trixie-security |
 |---|---|---|
-| nginx | 1.30.5 | 1.26.3 (`nginx` 1.26.3-3+deb13u9) |
+| nginx | 1.30.6 | 1.26.3 (`nginx` 1.26.3-3+deb13u9) |
 | libmodsecurity | 3.0.17 | 3.0.14 (`libmodsecurity3t64` 3.0.14-1+deb13u1) |
 | ModSecurity-nginx (the connector) | 1.0.4 | 1.0.3 (`libnginx-mod-http-modsecurity` 1.0.3-2+b3) |
 | CRS | 4.30.0 | 4.30.0, from the CRS release (not Debian's `modsecurity-crs` 3.3.7) |
