@@ -1,6 +1,6 @@
 # modsec-webbotauth-lua
 
-> **Alpha: do not use this in production yet.** This is a public alpha, for testing only. Run it on test sites, never in front of traffic you depend on. Rule IDs, settings and log fields may change before the first release. What is in this version: [CHANGELOG.md](CHANGELOG.md).
+> **Beta: do not use this in production yet.** This is a public beta, for testing only. Run it on test sites, never in front of traffic you depend on. Identity semantics are frozen for the 0.1 line; rule IDs, settings and log fields may still change before the first release. What is in this version: [CHANGELOG.md](CHANGELOG.md).
 
 Licensed under the [Apache License 2.0](LICENSE).
 

@@ -1,6 +1,14 @@
 # Changelog
 
-Versioning: git tags are `v0.1.0-alpha.N`. Every ModSecurity rule this plugin ships (and the bot-list rules `lists.ts` writes) carries `ver:'web-bot-auth-plugin/0.1.0'` for the whole 0.1.0 alpha line. After a version bump merges to `main`, a maintainer tags that commit and publishes a GitHub Release from this file. There is no automated release workflow.
+Versioning: git tags are `v0.1.0-beta.N` (earlier public cuts used `v0.1.0-alpha.N`). Every ModSecurity rule this plugin ships (and the bot-list rules `lists.ts` writes) carries `ver:'web-bot-auth-plugin/0.1.0'` for the whole 0.1.0 line. After a version bump merges to `main`, a maintainer tags that commit and publishes a GitHub Release from this file. There is no automated release workflow.
+
+## v0.1.0-beta.1 (2026-11-01)
+
+First public beta, for broader test-site operators. Identity semantics are frozen for the 0.1 line. Not for production use, and not a production-hardened edge WAF. The rule version string stays `web-bot-auth-plugin/0.1.0`.
+
+Changes since v0.1.0-alpha.2:
+
+- Docs and discoverability: public track moves from alpha to beta (`v0.1.0-beta.1`); README / GETTING-STARTED banners and clone branch, plus issue-form version placeholders. No plugin behavior change on this cut.
 
 ## v0.1.0-alpha.2 (2026-10-23)
 
