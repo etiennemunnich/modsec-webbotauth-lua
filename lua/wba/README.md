@@ -21,6 +21,7 @@ Apart from a 400 for broken protocol ([Controls and defaults](#controls-and-defa
 |---|---|
 | See how it works, with diagrams | [HOW-IT-WORKS.md](HOW-IT-WORKS.md) |
 | Try it in five minutes | [Quick start](#quick-start) |
+| Day-2 (one CLI) | [DAY-2.md](DAY-2.md) (`wba-ops`) |
 | Run it for real | [Set up](#set-up) |
 | Install it on your own nginx (Debian 13), step by step | [GETTING-STARTED.md](GETTING-STARTED.md) |
 | Know what each file does | [The files](#the-files) |
@@ -83,7 +84,9 @@ finch logs waf 2>&1 | grep -F '{"event":"web-bot-auth"'
 finch rm -f waf && rm -rf wba-demo
 ```
 
-`sign.ts curl` prints the `curl` command it would run. Leave off `| sh` to read the signed headers instead of sending them. To verify real bots, list them and let key sync fetch their keys ([Set up](#set-up)). Key sync is `wba-keysync`, a program that downloads the public keys of the bots you list. Your rules decide what `verified` allows ([Use it](#use-it)).
+`sign.ts curl` prints the `curl` command it would run. Leave off `| sh` to read the signed headers instead of sending them.
+
+**502 = pass** in this demo: there is no application behind the container, so a request that clears every rule gets nginx's 502. That is success for the Quick start. Next: mount a keysync store **directory** and follow the one-CLI checklist in [DAY-2.md](DAY-2.md) (`bun wba-keysync/wba-ops.ts`). To verify real bots, list them and let key sync fetch their keys ([Set up](#set-up)). Your rules decide what `verified` allows ([Use it](#use-it)).
 
 ## Set up
 

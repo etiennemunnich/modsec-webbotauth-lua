@@ -175,7 +175,8 @@ export function catalogue(evs: Evidence[], findings: Finding[], at = new Date())
     "# Bot catalogue", "",
     `Generated ${at.toISOString()} by \`bun wba-keysync/report.ts wba-keysync/bots.seed.yaml --catalogue --out wba-keysync/BOTS.md\`, `
     + "which fetches every source below. Do not edit it by hand: edit `bots.seed.yaml` and regenerate.", "",
-    "Every source is the bot operator's own (first party). An aggregator may have led us to a bot; it is never the source.", "",
+    "**Catalogue `verified` ≠ request `tx.wba_status=verified`.** Here `verified` means a first-party key directory or IP list checked out offline; at the WAF, `verified` means one request's signature (or list match) succeeded.", "",
+    "Every source is the bot operator's own (first party). An aggregator may have led us to a bot; it is never the source. Do not enroll from public self-reg registries.", "",
     ...RDNS_NOTE, "",
     "## How to read it", "",
     "**Level:** the strongest proof the bot supports, strongest first.", "",

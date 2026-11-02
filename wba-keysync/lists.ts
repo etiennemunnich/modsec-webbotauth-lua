@@ -277,10 +277,51 @@ export function generate(g: { bots: Bot[]; mode: Mode; slots: Record<string, num
 }
 
 interface BotResult { name: string; list: "fetched" | "kept" | "none"; version?: string; error?: string }
+
+/** What a bot's policy would do to impostors / the bot itself, for dry-run impact. */
+export function policyImpact(bot: Bot, hasList: boolean, mode: Mode): {
+  impostorsRefused: boolean; botRefused: boolean; note: string;
+} {
+  const enforce = mode === "enforce";
+  if (bot.policy === "deny") {
+    return {
+      impostorsRefused: false,
+      botRefused: enforce && !bot.claim_only,
+      note: bot.claim_only
+        ? "deny+claim_only: only verified matches are refused when enforce"
+        : enforce ? "deny refuses the bot when enforce" : "deny would refuse in enforce (log mode only logs)",
+    };
+  }
+  if (bot.policy === "allow") {
+    if (bot.claim_only) {
+      return { impostorsRefused: false, botRefused: false, note: "allow+claim_only: impostors are never refused" };
+    }
+    if (!hasList) {
+      return {
+        impostorsRefused: false, botRefused: false,
+        note: "allow with no-list: impostors are not refused (claims stay claimed)",
+      };
+    }
+    return {
+      impostorsRefused: enforce,
+      botRefused: false,
+      note: enforce
+        ? "allow+list: not-in-list claims refused"
+        : "allow+list: impostors would be refused in enforce (policy_mode is log)",
+    };
+  }
+  if (bot.policy === "log") {
+    return { impostorsRefused: false, botRefused: false, note: "policy log: observation only" };
+  }
+  return { impostorsRefused: false, botRefused: false, note: "no policy set" };
+}
+
 export interface RunOptions {
   bots: Bot[]; mode: unknown; source: string; out: string;
   fetchImpl?: FetchLike; resolve?: Resolver; allow?: ReadonlySet<string>; at?: Date;
   check?: string; reload?: string; log?: (line: string) => void;
+  /** When true: fetch and print impact, but never write, check, or reload. */
+  dryRun?: boolean;
 }
 
 const readJson = <T>(path: string, fallback: T): T => (existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) as T : fallback);
@@ -343,6 +384,25 @@ export async function runLists(o: RunOptions): Promise<number> {
     }
   }
 
+  if (o.dryRun) {
+    log("== dry-run: no write, no check, no reload");
+    let fetched = 0, kept = 0, none = 0;
+    for (const b of o.bots) {
+      const r = results.find((x) => x.name === b.name);
+      const hasIps = asList(b.ips).length > 0;
+      const status = r?.list === "fetched" ? "fetched" : r?.list === "kept" ? "kept" : "no-list";
+      // Exit 2 only when a published list URL failed or was kept — same as write path.
+      if (status === "fetched") fetched++;
+      else if (status === "kept") kept++;
+      else if (hasIps) none++;
+      const hasList = status === "fetched" || status === "kept";
+      const impact = policyImpact(b, hasList, mode);
+      log(`dry   ${b.name}: list=${status}; policy=${b.policy ?? "none"}; impostorsRefused=${impact.impostorsRefused}; ${impact.note}`);
+    }
+    log(`== dry-run ${o.bots.length} bots: ${fetched} fetched, ${kept} kept, ${none} failed/kept-previous; policy_mode ${mode}`);
+    return kept || none ? 2 : 0;
+  }
+
   // Remember every file as it was, so a failed check can put it back.
   const before = new Map<string, string | null>();
   const keep = (p: string) => { if (!before.has(p)) before.set(p, existsSync(p) ? readFileSync(p, "utf8") : null); };
@@ -391,18 +451,21 @@ export async function runLists(o: RunOptions): Promise<number> {
 }
 
 function usage(msg: string): never {
-  console.error(`${msg}\nusage: bun wba-keysync/lists.ts bots.yaml --out DIR [--allow-private-url URL]... [--check CMD [--reload CMD]]`);
+  console.error(`${msg}\nusage: bun wba-keysync/lists.ts bots.yaml --out DIR [--dry-run|--write] [--allow-private-url URL]... [--check CMD [--reload CMD]]`);
   process.exit(1);
 }
 
 async function main(argv: string[]): Promise<number> {
   let file: string | undefined, out: string | undefined, check: string | undefined, reload: string | undefined;
+  let dryRun = false, write = false;
   const allow = new Set<string>();
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i], value = () => argv[++i] ?? usage(`${a} needs a value`);
     if (a === "--out") out = value();
     else if (a === "--check") check = value();
     else if (a === "--reload") reload = value();
+    else if (a === "--dry-run") dryRun = true;
+    else if (a === "--write") write = true; // explicit write (default when neither flag); required by deploy units / wba-ops
     else if (a === "--allow-private-url") {
       const url = allowedUrl(value());
       if (!url) usage(`--allow-private-url: ${JSON.stringify(argv[i])}: the exact https URL of one list (https://host[:port]/path), not an origin`);
@@ -415,11 +478,13 @@ async function main(argv: string[]): Promise<number> {
   }
   if (!file || !out) usage("a bots file and --out are needed");
   if (reload && !check) usage("--reload needs --check, so a broken file is never loaded");
+  if (dryRun && write) usage("pass either --dry-run or --write, not both");
+  if (dryRun && (check || reload)) usage("--dry-run cannot be combined with --check or --reload");
   const yaml = (globalThis as { Bun?: { YAML: { parse(s: string): unknown } } }).Bun?.YAML;
   if (!yaml) usage("lists.ts reads YAML with Bun: run it with bun");
   const parsed = yaml.parse(readFileSync(file, "utf8")) as { bots?: Bot[]; policy_mode?: unknown } | null;
   if (!parsed?.bots?.length) usage(`${file}: no bots`);
-  return runLists({ bots: parsed.bots, mode: parsed.policy_mode ?? "log", source: basename(file), out, allow, check, reload });
+  return runLists({ bots: parsed.bots, mode: parsed.policy_mode ?? "log", source: basename(file), out, allow, check, reload, dryRun });
 }
 
 if (import.meta.main) process.exit(await main(process.argv.slice(2)));

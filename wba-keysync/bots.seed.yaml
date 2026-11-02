@@ -227,23 +227,45 @@ bots:
     docs: https://developers.cloudflare.com/browser-run/reference/automatic-request-headers/
     description: "Cloudflare automatically attaches headers to every request made through Browser Run."
     wba: https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev
-  # Hosted agents that sign, whose directories validate but whose Signature-Agent
-  # value (the identifier they send) is not yet confirmed from a signed request.
-  # List one only once a signed request from it shows that value in its
-  # Signature-Agent header; an entry
-  # under the wrong identifier never verifies anything. Cloudflare Radar lists
-  # the directory each registered.
-  # - name: agentcore-browser  # AWS Bedrock AgentCore Browser; one key per Region
+  # Hosted agents that sign. Activate only with directory 200 + thumbprint kids
+  # + clear Signature-Agent origin (first-party docs or captured request). Never
+  # enroll from public self-reg scrapes. Still pending: agentcore-browser,
+  # browserbase (see notes on each).
+  # - name: agentcore-browser  # AWS Bedrock AgentCore Browser (preview)
+  #   operator: Amazon
+  #   category: agent
+  #   docs: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/browser-web-bot-auth.html
   #   wba: https://xhah6q48pbxb4.keydirectory.signer.us-east-1.on.aws
-  # - name: browserbase        # apex 301s to www; opt-in signing (beta)
+  #   note: "PENDING 2026-11-02: well-known 404 JWK not found on seed host and all 9 Radar regional keydirectory.signer.*.on.aws hosts probed; Signature-Agent origin not stably documented for allowlisting."
+  # - name: browserbase        # opt-in signing (beta); apex 301s to www
+  #   operator: Browserbase
+  #   category: agent
+  #   docs: https://docs.browserbase.com/platform/identity/web-bot-auth
   #   wba: https://www.browserbase.com
-  # - name: kernel-agent
-  #   wba: https://www.kernel.sh
-  # - name: kernel-search
-  #   wba: https://search.bot.kernel.sh
-  #   user_agent: KernelSearchBot
-  # - name: exasearchbot      # Exa's docs page answered 404; directory found through Cloudflare Radar
-  #   wba: https://crawler.exa.ai
+  #   note: "PENDING 2026-11-02: directory 200 with 2 thumbprint kids, but docs do not state exact Signature-Agent origin; beta request-access only."
+  - name: kernel-agent
+    operator: Kernel
+    category: agent
+    docs: https://www.kernel.sh/docs/bots
+    description: "Kernel Agent is user-directed browser automation. Requests are signed with Web Bot Auth rather than a dedicated crawler user-agent token."
+    wba: https://www.kernel.sh
+    note: "Signature-Agent https://www.kernel.sh per Kernel bots docs (checked 2026-11-02). Directory keys may carry short nbf/exp (~1h): run key sync often."
+  - name: kernel-search
+    operator: Kernel
+    category: ai-search
+    docs: https://www.kernel.sh/docs/bots
+    description: "Kernel Search crawls pages to build search indexes and retrieval databases."
+    user_agent: KernelSearchBot
+    wba: https://search.bot.kernel.sh
+    note: "Signature-Agent https://search.bot.kernel.sh per Kernel bots docs (checked 2026-11-02). Directory keys may carry short nbf/exp (~1h): run key sync often."
+  - name: exasearchbot
+    operator: Exa
+    category: ai-search
+    docs: https://crawler.exa.ai/
+    description: "ExaSearchBot fetches pages on the public web so they can become discoverable through Exa search and retrieval."
+    user_agent: ExaSearchBot
+    wba: https://crawler.exa.ai
+    note: "Signature-Agent https://crawler.exa.ai (operator docs + directory). Distinct from ExaUser at https://exauser.crawler.exa.ai (not enrolled here)."
 
   # --- Local agents: claim only ------------------------------------------------
   # These run on the user's own machine and send from the user's IP: no list,

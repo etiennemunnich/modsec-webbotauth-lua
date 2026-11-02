@@ -1,0 +1,9 @@
+# Template: /etc/cron.d/wba-keysync — flock, absolute bun path, no private-allow, no nginx reload.
+# Adjust paths. Log directory must be owned by wba and not world-writable.
+SHELL=/bin/sh
+PATH=/usr/local/bin:/usr/bin:/bin
+
+* * * * * wba cd /opt/web-bot-auth && flock -n /srv/wba/keys/wba-keysync.lock /usr/local/bin/bun wba-keysync/cli.ts --origins /srv/wba/agents.txt --out /srv/wba/keys/wba-keys.tsv >> /var/log/wba/keysync.log 2>&1
+
+# Lists: separate schedule; --write explicit; reload is NOT here.
+# 17 * * * * wba cd /opt/web-bot-auth && flock -n /srv/wba/bots/wba-lists.lock /usr/local/bin/bun wba-keysync/lists.ts /srv/wba/bots.yaml --out /srv/wba/bots --write >> /var/log/wba/lists.log 2>&1
