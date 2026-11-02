@@ -20,7 +20,7 @@ export interface DoctorOptions {
 const EXIT_TABLE = [
   "Exit codes (do not conflate):",
   "  keysync (cli.ts): 0 all origins usable; 2 some failed (store still written); 1 usage/config (store untouched)",
-  "  lists.ts:         0 every list fetched; 2 rules written but a list kept/none; 1 nothing changed / check-reload failed",
+  "  lists.ts:         0 every list URL fetched (dry-run or write); 2 a list kept or none (dry-run or write); 1 usage, bad bots, slot overflow, or check/reload rollback",
   "Private exceptions stay CLI and exact: keysync --allow-private-origin; lists --allow-private-url. Never from bots.yaml.",
 ];
 
@@ -138,14 +138,15 @@ export function suggestUnknownAgents(
       suggestions.push(`# suggested from audit (untrusted until validate):`);
       suggestions.push(`# - name: <pick-a-name>`);
       suggestions.push(`#   wba: ${url}`);
-      suggestions.push(`${url}`);
+      suggestions.push(`# not a shell command — paste the wba: line into bots.yaml`);
     }
   }
   return {
     suggestions: suggestions.map(printable),
     wrote: false,
     reminder: printable(
-      "Suggest only: copy into bots.yaml after you pick a name, then wba-ops validate → agents → sync-keys. "
+      "Suggest only: copy the commented wba: URL into bots.yaml after you pick a name, then wba-ops validate → agents → sync-keys. "
+      + "That URL is for the file, not a shell command. "
       + "Remove temporary audit rule 9534139 when done (it logs raw Signature). Never enroll from Signature-Agent alone.",
     ),
   };

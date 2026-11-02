@@ -14,8 +14,10 @@ WorkingDirectory=/opt/web-bot-auth
 ExecStart=/usr/bin/flock -n /srv/wba/bots/wba-lists.lock /usr/local/bin/bun /opt/web-bot-auth/wba-keysync/lists.ts /srv/wba/bots.yaml --out /srv/wba/bots --write
 # Optional exact list URL exception — do NOT bake into the shipped unit:
 #   --allow-private-url https://lists.internal.example/bot.json
-# Fixed check only if your sudoers allows it as wba; otherwise run check/reload by hand:
-#   --check '/usr/sbin/nginx -t'
+# Fixed check only if sudoers lets wba run nginx -t; otherwise run check/reload by hand.
+# lists.ts runs --check with `sh -c`, so the sudoers rule and the flag must be the same command:
+#   wba ALL=(root) NOPASSWD: /usr/sbin/nginx -t
+#   --check 'sudo -n /usr/sbin/nginx -t'
 Nice=10
 NoNewPrivileges=yes
 ProtectSystem=strict

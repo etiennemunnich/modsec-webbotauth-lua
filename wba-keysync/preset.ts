@@ -1,5 +1,6 @@
 // preset.ts: category / alias filter for agents.ts and validate.ts.
-// Selection only — never skips validate, never writes allowlists.
+// Selection only: in validate.ts, --preset and --only narrow which bots get static checks and network fetches.
+// A filtered run does not certify the rest of the file. Never writes allowlists.
 // Category names mirror validate.ts CATEGORIES (kept here to avoid a cycle).
 import type { Bot } from "./validate.ts";
 

@@ -5,8 +5,12 @@
 // deny, log) act on that. Run it from cron; the WAF reads the result when it
 // starts or reloads, so no request ever waits on a fetch.
 //
-//   bun wba-keysync/lists.ts bots.yaml --out DIR [--allow-private-url URL]...
+//   bun wba-keysync/lists.ts bots.yaml --out DIR [--dry-run|--write]
+//                            [--allow-private-url URL]...
 //                            [--check 'nginx -t' [--reload 'nginx -s reload']]
+//
+// Passing neither flag still writes (same as --write). --dry-run fetches and
+// reports impact without writing. wba-ops sync-lists passes one of the two.
 //
 // DIR receives:
 //   web-bot-auth-bots-before.conf the rules; load it as a CRS plugin file

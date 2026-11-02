@@ -4,7 +4,11 @@
  * project's seed list, on an operator's own registry, or on a registry an
  * operator is about to subscribe to.
  *
- *   bun wba-keysync/validate.ts bots.yaml [--only name,name] [--json] [--strict]
+ *   bun wba-keysync/validate.ts bots.yaml [--only name,name] [--preset search,ai] [--json] [--strict]
+ *
+ * --only and --preset filter both static checks and network fetches. They do
+ * not certify bots left out of the filter. Run with no filter before enrolling
+ * the whole file.
  *
  * For each bot it checks:
  *   - the entry itself: a name, a known category (CATEGORIES) and AIPREF
@@ -442,7 +446,7 @@ export async function checkSources(
 
 async function main(argv: string[]) {
   const file = argv.find((a) => !a.startsWith("--"));
-  if (!file) { console.error("usage: bun wba-keysync/validate.ts bots.yaml [--only a,b] [--preset search,ai] [--json] [--strict]"); process.exit(2); }
+  if (!file) { console.error("usage: bun wba-keysync/validate.ts bots.yaml [--only a,b] [--preset search,ai] [--json] [--strict]\n--only and --preset filter both static checks and network fetches; they do not certify bots left out."); process.exit(2); }
   const only = argv.find((a) => a.startsWith("--only="))?.slice(7).split(",") ?? (argv.includes("--only") ? argv[argv.indexOf("--only") + 1]?.split(",") : undefined);
   let preset: Set<string> | undefined;
   try {
