@@ -10,7 +10,7 @@ A signed demo request that returns **502** means the WAF accepted it (no backend
 
 ```bash
 bun wba-keysync/wba-ops.ts init-bots bots.yaml          # copy seed; edit what you recognise
-bun wba-keysync/wba-ops.ts validate bots.yaml           # first-party checks; optional --preset search,ai
+bun wba-keysync/wba-ops.ts validate bots.yaml           # first-party checks; --preset/--only filter static and network checks and do not check the rest of the file
 bun wba-keysync/wba-ops.ts agents bots.yaml --out /srv/wba/agents.txt
 # install wba-keysync/deploy/ units (User=wba; no --allow-private-* baked in)
 bun wba-keysync/wba-ops.ts sync-keys --origins /srv/wba/agents.txt --out /srv/wba/keys/wba-keys.tsv
@@ -45,7 +45,7 @@ Temporary audit rule **9534139** → `wba-ops unknown-agent --audit FILE` (**sug
 | Tool | 0 | 2 | 1 |
 |---|---|---|---|
 | sync-keys | all origins usable | some failed (store written) | usage/config (store untouched) |
-| sync-lists | every list fetched | written but kept/none | nothing changed / check failed |
+| sync-lists | every list URL fetched (dry-run or write) | a list kept or none (dry-run or write) | usage, bad bots, slot overflow, or check/reload rollback |
 
 Private exceptions stay exact CLI flags you type: keysync `--allow-private-origin`; lists `--allow-private-url`. Doctor never adds them.
 

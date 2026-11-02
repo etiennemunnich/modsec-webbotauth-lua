@@ -73,13 +73,22 @@ async function debugSig(argv: string[]): Promise<number> {
   const dir = opts.get("--dir") ?? fail("--dir is required");
   let target: URL;
   try { target = new URL(url); } catch { fail(`not a URL: ${url}`); }
-  const stored = JSON.parse(readFileSync(join(dir, "test-agent-key.json"), "utf8"));
+  const keyPath = join(dir, "test-agent-key.json");
+  let stored: { agent?: string; kty?: string; crv?: string; x?: string; d?: string };
+  try {
+    stored = JSON.parse(readFileSync(keyPath, "utf8"));
+  } catch (e) {
+    const code = (e as { code?: string }).code;
+    if (code === "ENOENT") fail(`missing ${keyPath}`);
+    fail(`cannot read ${keyPath}: ${(e as Error).message}`);
+  }
   const agent = opts.get("--agent") ?? stored.agent ?? "https://test-agent.example";
   const { agent: _a, ...priv } = stored;
   const pub = { kty: priv.kty, crv: priv.crv, x: priv.x };
   const now = Math.floor(Date.now() / 1000);
   const { keyid } = await storeFor(pub, agent, now);
   const expires = Number(opts.get("--expires") ?? 300);
+  if (!Number.isInteger(expires) || expires < 1 || expires > 86400) fail("--expires must be 1 to 86400 seconds");
   const method = (opts.get("--method") ?? "GET").toUpperCase();
   const s = await signRequest({ priv, keyid, agent, url: target, method, host: opts.get("--host"), now, expires });
   console.log("== signature base (RFC 9421 §2.5; offline, from sign.ts)");

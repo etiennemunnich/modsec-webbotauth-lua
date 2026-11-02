@@ -246,6 +246,38 @@ test("wba-ops debug-sig curl dumps base offline and does not npm install", () =>
   }
 });
 
+test("wba-ops debug-sig curl uses sign.ts --expires bounds and a one-line missing-key error", () => {
+  const dir = mkdtempSync(join(tmpdir(), "wba-ops-expires-"));
+  const empty = mkdtempSync(join(tmpdir(), "wba-ops-nokey-"));
+  try {
+    const init = spawnSync("bun", [fileURLToPath(new URL("./sign.ts", import.meta.url)), "init", dir], { encoding: "utf8" });
+    assert.equal(init.status, 0, init.stderr);
+    const url = "https://localhost:8443/agents/hello";
+    for (const n of ["0", "-1", "86401", "1.5", "foo"]) {
+      const out = bun("debug-sig", "curl", url, "--dir", dir, "--expires", n);
+      const text = out.stderr + out.stdout;
+      assert.equal(out.status, 1, `${n}: ${text}`);
+      assert.match(text, /--expires must be 1 to 86400/);
+      assert.doesNotMatch(out.stdout, /signature base|@method|curl /i);
+    }
+    for (const n of ["1", "300", "86400"]) {
+      const out = bun("debug-sig", "curl", url, "--dir", dir, "--expires", n);
+      assert.equal(out.status, 0, `${n}: ${out.stderr}${out.stdout}`);
+      assert.match(out.stdout, /signature base|@method/i);
+    }
+    const missing = bun("debug-sig", "curl", url, "--dir", empty);
+    assert.equal(missing.status, 1, missing.stderr + missing.stdout);
+    const errLines = missing.stderr.trim().split("\n").filter((l) => l.length > 0);
+    assert.deepEqual(errLines.length, 1, missing.stderr);
+    assert.match(errLines[0], /^wba-ops: .*test-agent-key\.json/);
+    assert.equal(missing.stdout, "");
+    assert.doesNotMatch(missing.stderr, /\bat\s+/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(empty, { recursive: true, force: true });
+  }
+});
+
 // --- unknown-agent (suggest-only) -------------------------------------------
 
 test("suggestUnknownAgents: parses 9534139 audit for Signature-Agent; never returns write instructions as done", () => {
@@ -271,6 +303,23 @@ test("suggestUnknownAgents: ignores spoofable noise without 9534139 context when
   const noise = `Signature-Agent: "https://evil.example"\n`;
   const s = suggestUnknownAgents(noise, { requireRule: true });
   assert.equal(s.suggestions.length, 0);
+});
+
+test("suggestUnknownAgents keeps a shell-metacharacter URL inside a comment", () => {
+  const url = "https://evil.example/path/$(id)`whoami`&true|cat";
+  const audit = `ModSecurity: Warning. [id "9534139"] Signature-Agent: "${url}"\n`;
+  const s = suggestUnknownAgents(audit);
+  const blob = s.suggestions.join("\n");
+  assert.ok(s.suggestions.some((line) => line.includes(`wba: ${url}`)), blob);
+  for (const line of s.suggestions) {
+    if (line.includes(url) || line.includes("$(id)") || line.includes("`whoami`")) {
+      assert.match(line, /^\s*#/, `URL must stay commented: ${JSON.stringify(line)}`);
+    }
+    assert.notEqual(line.trim(), url);
+    assert.notEqual(line.trim(), `'${url}'`);
+  }
+  assert.match(blob, /not a shell command/i);
+  assert.match(s.reminder, /not a shell command|for the file/i);
 });
 
 test("wba-ops unknown-agent prints suggestions only; does not write bots.yaml", () => {
@@ -325,6 +374,47 @@ test("wba-ops help lists the day-2 commands and points at DAY-2", () => {
 
 // --- deploy templates (least privilege) -------------------------------------
 
+test("doctor and DAY-2 describe lists exit codes the way runLists returns them", () => {
+  const listsLine = doctor({ requireBun: false }).lines.find((l) => l.includes("lists.ts:")) ?? "";
+  assert.match(listsLine, /0 .*list URL fetched/);
+  assert.match(listsLine, /dry-run or write/);
+  assert.match(listsLine, /2 .*kept or none/);
+  assert.match(listsLine, /1 .*(usage|bad bots).*slot overflow.*check\/reload rollback/);
+  assert.doesNotMatch(listsLine, /nothing changed/);
+  assert.doesNotMatch(listsLine, /rules written but/);
+  const day2 = readFileSync(join(REPO, "lua/wba/DAY-2.md"), "utf8");
+  const row = day2.split("\n").find((l) => l.includes("| sync-lists |")) ?? "";
+  assert.match(row, /every list URL fetched \(dry-run or write\)/);
+  assert.match(row, /a list kept or none \(dry-run or write\)/);
+  assert.match(row, /usage, bad bots, slot overflow, or check\/reload rollback/);
+  assert.doesNotMatch(row, /nothing changed/);
+  assert.doesNotMatch(row, /written but kept/);
+});
+
+test("preset and DAY-2 say --preset and --only narrow checks instead of never skipping validate", () => {
+  const preset = readFileSync(fileURLToPath(new URL("./preset.ts", import.meta.url)), "utf8").split("\n").slice(0, 8).join("\n");
+  assert.doesNotMatch(preset, /never skips validate/i);
+  assert.match(preset, /--preset/);
+  assert.match(preset, /--only/);
+  assert.match(preset, /static checks and network fetches/i);
+  assert.match(preset, /does not certify the rest of the file/i);
+  assert.match(preset, /never writes allowlists/i);
+  const day2 = readFileSync(join(REPO, "lua/wba/DAY-2.md"), "utf8");
+  const validateLine = day2.split("\n").find((l) => l.includes("wba-ops.ts validate")) ?? "";
+  assert.match(validateLine, /--preset\/--only filter static and network checks/);
+  assert.match(validateLine, /do not check the rest of the file/);
+  const validateSrc = readFileSync(fileURLToPath(new URL("./validate.ts", import.meta.url)), "utf8");
+  const usage = validateSrc.split("\n").find((l) => l.includes("usage: bun wba-keysync/validate.ts")) ?? "";
+  assert.match(usage, /--only and --preset filter both static checks and network fetches/);
+  assert.match(usage, /do not certify bots left out/);
+});
+
+test("lists.ts synopsis names --dry-run and --write", () => {
+  const header = readFileSync(fileURLToPath(new URL("./lists.ts", import.meta.url)), "utf8").split("\n").slice(0, 16).join("\n");
+  assert.match(header, /\[--dry-run\|--write\]/);
+  assert.match(header, /Passing neither flag still writes/);
+});
+
 test("deploy templates: User=wba, hardening, no private-allow, keysync ≠ nginx reload", () => {
   const deploy = join(REPO, "wba-keysync/deploy");
   const service = readFileSync(join(deploy, "wba-keysync.service"), "utf8");
@@ -344,6 +434,9 @@ test("deploy templates: User=wba, hardening, no private-allow, keysync ≠ nginx
   const serviceExec = service.split("\n").filter((l) => l.startsWith("ExecStart=")).join("\n");
   assert.doesNotMatch(serviceExec, /nginx|reload/);
   assert.match(lists, /--write/); // explicit write; dry-run is the ops default
+  assert.match(lists, /wba ALL=\(root\) NOPASSWD: \/usr\/sbin\/nginx -t/);
+  assert.match(lists, /--check 'sudo -n \/usr\/sbin\/nginx -t'/);
+  assert.doesNotMatch(lists, /--check '\/usr\/sbin\/nginx -t'/);
   const listsExec = lists.split("\n").filter((l) => l.startsWith("ExecStart=")).join("\n");
   assert.doesNotMatch(listsExec, /nginx -s reload/); // reload not in ExecStart
   assert.match(timer, /OnCalendar|OnUnitActiveSec/);
