@@ -1,0 +1,34 @@
+# Template: key sync oneshot. Install under /etc/systemd/system/ after editing paths.
+# Least privilege: User=wba, no private-origin exceptions, no nginx reload.
+# Keysync writes the store only; nginx reads it — never combine reload here.
+[Unit]
+Description=Web Bot Auth key sync (wba-keysync)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=wba
+Group=wba
+WorkingDirectory=/opt/web-bot-auth
+# Use the absolute bun path on this host.
+ExecStart=/usr/bin/flock -n /srv/wba/keys/wba-keysync.lock /usr/local/bin/bun /opt/web-bot-auth/wba-keysync/cli.ts --origins /srv/wba/agents.txt --out /srv/wba/keys/wba-keys.tsv
+# Optional private exception (exact origin only) — do NOT bake into the shipped unit:
+#   --allow-private-origin https://bot.internal.example
+Nice=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ReadWritePaths=/srv/wba/keys /var/log/wba
+StandardOutput=append:/var/log/wba/keysync.log
+StandardError=append:/var/log/wba/keysync.log
+
+[Install]
+WantedBy=multi-user.target

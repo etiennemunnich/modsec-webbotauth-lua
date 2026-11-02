@@ -1,0 +1,35 @@
+# Template: bot IP-list sync. Separate from keysync — never nginx reload here.
+# Dry-run first on the host: bun wba-keysync/wba-ops.ts sync-lists bots.yaml --out /srv/wba/bots
+# This unit uses --write explicitly. Reload nginx yourself after `nginx -t`.
+[Unit]
+Description=Web Bot Auth bot-list sync (lists.ts)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=wba
+Group=wba
+WorkingDirectory=/opt/web-bot-auth
+ExecStart=/usr/bin/flock -n /srv/wba/bots/wba-lists.lock /usr/local/bin/bun /opt/web-bot-auth/wba-keysync/lists.ts /srv/wba/bots.yaml --out /srv/wba/bots --write
+# Optional exact list URL exception — do NOT bake into the shipped unit:
+#   --allow-private-url https://lists.internal.example/bot.json
+# Fixed check only if your sudoers allows it as wba; otherwise run check/reload by hand:
+#   --check '/usr/sbin/nginx -t'
+Nice=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ReadWritePaths=/srv/wba/bots /var/log/wba
+StandardOutput=append:/var/log/wba/lists.log
+StandardError=append:/var/log/wba/lists.log
+
+[Install]
+WantedBy=multi-user.target

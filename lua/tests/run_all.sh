@@ -69,7 +69,7 @@ step "every documented reason is tested" bash lua/tests/reasons.sh
 if have bun; then
   step "query-param vectors are current (bun)" sh -c 'bun lua/tests/query-param/gen.ts | cmp -s - lua/tests/query-param/vectors.tsv'
   step "coding vectors agree with zlib (bun)" bun lua/tests/coding/gen.ts --check lua/tests/coding/vectors.tsv
-  step "key-sync (bun)" bun test ./wba-keysync/keysync.test.ts ./wba-keysync/proof.test.ts ./wba-keysync/sweep.test.ts ./wba-keysync/validate.test.ts ./wba-keysync/report.test.ts ./wba-keysync/sign.test.ts ./wba-keysync/agents.test.ts ./wba-keysync/lists.test.ts ./wba-keysync/robots.test.ts
+  step "key-sync (bun)" bun test ./wba-keysync/keysync.test.ts ./wba-keysync/proof.test.ts ./wba-keysync/sweep.test.ts ./wba-keysync/validate.test.ts ./wba-keysync/report.test.ts ./wba-keysync/sign.test.ts ./wba-keysync/agents.test.ts ./wba-keysync/lists.test.ts ./wba-keysync/robots.test.ts ./wba-keysync/ops.test.ts
   # The issue forms testers see.
   step "issue forms in .github/ISSUE_TEMPLATE" bun lua/tests/issue-forms.ts .github/ISSUE_TEMPLATE
 else
@@ -78,7 +78,7 @@ fi
 if have node; then
   step "query-param vectors are current (node)" sh -c 'node --experimental-strip-types lua/tests/query-param/gen.ts 2>/dev/null | cmp -s - lua/tests/query-param/vectors.tsv'
   step "coding vectors agree with zlib (node)" node --experimental-strip-types lua/tests/coding/gen.ts --check lua/tests/coding/vectors.tsv
-  step "key-sync (node)" node --test wba-keysync/keysync.test.ts wba-keysync/proof.test.ts wba-keysync/sweep.test.ts wba-keysync/validate.test.ts wba-keysync/report.test.ts wba-keysync/sign.test.ts wba-keysync/agents.test.ts wba-keysync/lists.test.ts wba-keysync/robots.test.ts
+  step "key-sync (node)" node --test wba-keysync/keysync.test.ts wba-keysync/proof.test.ts wba-keysync/sweep.test.ts wba-keysync/validate.test.ts wba-keysync/report.test.ts wba-keysync/sign.test.ts wba-keysync/agents.test.ts wba-keysync/lists.test.ts wba-keysync/robots.test.ts wba-keysync/ops.test.ts
 else
   skip "node: query-param and coding vectors, key-sync"
 fi

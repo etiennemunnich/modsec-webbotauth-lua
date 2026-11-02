@@ -1,0 +1,13 @@
+# Template: run key sync about every minute (directories stay fresh via HTTP cache).
+[Unit]
+Description=Timer for Web Bot Auth key sync
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=wba-keysync.service
+
+[Install]
+WantedBy=timers.target

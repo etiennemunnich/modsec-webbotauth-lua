@@ -2,6 +2,11 @@
 
 Versioning: git tags are `v0.1.0-beta.N` (earlier public cuts used `v0.1.0-alpha.N`). Every ModSecurity rule this plugin ships (and the bot-list rules `lists.ts` writes) carries `ver:'web-bot-auth-plugin/0.1.0'` for the whole 0.1.0 line. After a version bump merges to `main`, a maintainer tags that commit and publishes a GitHub Release from this file. There is no automated release workflow.
 
+## Unreleased
+
+- Operator day-2: `wba-ops` entrypoint (init-bots, validate, agents, sync-keys, sync-lists dry-run-by-default, doctor read-only, debug-sig offline, unknown-agent suggest-only), `wba-keysync/deploy/` least-privilege templates, lean `lua/wba/DAY-2.md`. Fail-closed: no auto `--allow-private-*`, no auto-enroll.
+- Seed: activate `kernel-agent`, `kernel-search`, `exasearchbot` (first-party Signature-Agent documented); keep `agentcore-browser` / `browserbase` pending. Catalogue dual-`verified` banner in `BOTS.md`.
+
 ## v0.1.0-beta.1 (2026-11-01)
 
 First public beta, for broader test-site operators. Identity semantics are frozen for the 0.1 line. Not for production use, and not a production-hardened edge WAF. The rule version string stays `web-bot-auth-plugin/0.1.0`.

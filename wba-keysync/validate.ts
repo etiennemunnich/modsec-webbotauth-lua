@@ -28,9 +28,11 @@
  * Exit 0: no failures (warnings allowed unless --strict). Exit 1: a failure.
  * Exit 2: usage. Only the URLs in the file are fetched.
  */
+import { readFileSync } from "node:fs";
 import { DEFAULT_LIMITS, getDirectory, guardAddress, HttpError, keysFromDirectory, printable, readCapped, resolveHost, type FetchLike, type Resolver } from "./keysync.ts";
 import { directoryProofs } from "./proof.ts";
 import { directoryIdentifier, WELL_KNOWN } from "./identifier.ts";
+import { expandPreset, filterByPreset } from "./preset.ts";
 
 export interface Bot {
   name: string; operator?: string; category?: string;
@@ -440,13 +442,22 @@ export async function checkSources(
 
 async function main(argv: string[]) {
   const file = argv.find((a) => !a.startsWith("--"));
-  if (!file) { console.error("usage: bun wba-keysync/validate.ts bots.yaml [--only a,b] [--json] [--strict]"); process.exit(2); }
+  if (!file) { console.error("usage: bun wba-keysync/validate.ts bots.yaml [--only a,b] [--preset search,ai] [--json] [--strict]"); process.exit(2); }
   const only = argv.find((a) => a.startsWith("--only="))?.slice(7).split(",") ?? (argv.includes("--only") ? argv[argv.indexOf("--only") + 1]?.split(",") : undefined);
+  let preset: Set<string> | undefined;
+  try {
+    const raw = argv.find((a) => a.startsWith("--preset="))?.slice(9) ?? (argv.includes("--preset") ? argv[argv.indexOf("--preset") + 1] : undefined);
+    if (raw) preset = expandPreset(raw);
+  } catch (e) {
+    console.error(`validate.ts: ${(e as Error).message}`);
+    process.exit(2);
+  }
   const yaml = (globalThis as { Bun?: { YAML: { parse(s: string): unknown } } }).Bun?.YAML;
   if (!yaml) { console.error("validate.ts reads YAML with Bun: run it with bun"); process.exit(2); }
-  const parsed = yaml.parse(await (await import("node:fs/promises")).readFile(file, "utf8")) as { bots?: Bot[] };
-  const bots = (parsed?.bots ?? []).filter((b) => !only || only.includes(b?.name));
-  if (bots.length === 0) { console.error(`${file}: no bots${only ? " matching --only" : ""}`); process.exit(2); }
+  const parsed = yaml.parse(readFileSync(file, "utf8")) as { bots?: Bot[] };
+  let bots = (parsed?.bots ?? []).filter((b) => !only || only.includes(b?.name));
+  if (preset) bots = filterByPreset(bots, preset);
+  if (bots.length === 0) { console.error(`${file}: no bots${only ? " matching --only" : ""}${preset ? " matching --preset" : ""}`); process.exit(2); }
 
   const findings = checkEntries(bots);
   const broken = new Set(findings.filter((x) => x.level === "fail").map((x) => x.bot));

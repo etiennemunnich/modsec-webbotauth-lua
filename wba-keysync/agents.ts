@@ -22,6 +22,7 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { WELL_KNOWN } from "./identifier.ts";
 import { parseAgent } from "./keysync.ts";
+import { expandPreset, filterByPreset } from "./preset.ts";
 import { nameProblem, type Bot } from "./validate.ts";
 
 class UsageError extends Error {}
@@ -68,19 +69,25 @@ function main(argv: string[]): number {
   try {
     const [file, ...rest] = argv;
     if (!file || file.startsWith("--")) throw new UsageError("a bots file is required");
-    let out: string | undefined, only: Set<string> | undefined;
+    let out: string | undefined, only: Set<string> | undefined, preset: Set<string> | undefined;
     for (let i = 0; i < rest.length; i += 2) {
       const v = rest[i + 1];
       if (v === undefined) throw new UsageError(`${rest[i]} needs a value`);
       if (rest[i] === "--out") out = v;
       else if (rest[i] === "--only") only = new Set(v.split(",").filter(Boolean));
+      else if (rest[i] === "--preset") preset = expandPreset(v);
       else throw new UsageError(`unknown option ${rest[i]}`);
     }
     const yaml = (globalThis as { Bun?: { YAML: { parse(s: string): unknown } } }).Bun?.YAML;
     if (!yaml) throw new Error("agents.ts reads YAML with Bun: run it with bun");
     const parsed = yaml.parse(readFileSync(file, "utf8")) as { bots?: Bot[] } | null;
     if (!Array.isArray(parsed?.bots)) throw new Error(`${file}: no "bots:" list`);
-    const r = agentsFromBots(parsed.bots, basename(file), only);
+    let bots = parsed.bots;
+    if (preset) {
+      bots = filterByPreset(bots, preset);
+      if (!bots.length) throw new UsageError(`--preset matched no bots in ${file}`);
+    }
+    const r = agentsFromBots(bots, basename(file), only);
     if (out) {
       const tmp = `${out}.${process.pid}.tmp`;
       writeFileSync(tmp, r.text, { flag: "wx" });
@@ -91,7 +98,7 @@ function main(argv: string[]): number {
     console.error(`wba-agents: ${r.agents} agents${out ? ` written to ${out}` : ""}; ${r.withoutWba.length} bots without wba left out`);
     return 0;
   } catch (e) {
-    const usage = "\nusage: bun wba-keysync/agents.ts bots.yaml [--out agents.txt] [--only name,name]";
+    const usage = "\nusage: bun wba-keysync/agents.ts bots.yaml [--out agents.txt] [--only name,name] [--preset search,ai]";
     console.error(`wba-agents: ${(e as Error).message}${e instanceof UsageError ? usage : ""}`);
     return 1;
   }

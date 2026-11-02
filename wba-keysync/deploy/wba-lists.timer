@@ -1,0 +1,12 @@
+# Template: lists change rarely — hourly is enough. Reload nginx separately after a write.
+[Unit]
+Description=Timer for Web Bot Auth bot-list sync
+
+[Timer]
+OnBootSec=5min
+OnCalendar=hourly
+Persistent=true
+Unit=wba-lists.service
+
+[Install]
+WantedBy=timers.target

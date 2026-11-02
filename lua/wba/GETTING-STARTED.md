@@ -2,11 +2,13 @@
 
 > **Beta: do not use this in production yet.** This is v0.1.0-beta.1 ([README](README.md)). Try it on a test server first.
 
+**Prefer the image first.** Run the README [Quick start](README.md#quick-start) (about five minutes). A signed request that returns **502** is a pass in that demo (no backend). Then use [DAY-2.md](DAY-2.md) (`wba-ops`) for keysync and bot lists. This page is the **Debian 13 bare-metal appendix** when you cannot use the image.
+
 At the end of this page you have nginx on Debian 13 (trixie) with ModSecurity v3, the OWASP Core Rule Set (CRS) 4.30.0 and this plugin. An unsigned request to a bot-only path is refused and asked for a signature. A request signed by a test bot is verified, passed to your application and logged.
 
 There are two ways to run the plugin:
 
-- **The CRS container image (recommended).** The official CRS nginx image plus this plugin, built from the [`Dockerfile`](Dockerfile). It is the tested route: the live suite passed on every CRS release of the last 12 months (24 images, 11 October 2026; [TESTING.md, Version matrix](TESTING.md#version-matrix)). See the README's [Quick start](README.md#quick-start) and [Set up](README.md#set-up).
+- **The CRS container image (recommended).** The official CRS nginx image plus this plugin, built from the [`Dockerfile`](Dockerfile). It is the tested route: the live suite passed on every CRS release of the last 12 months (24 images, 11 October 2026; [TESTING.md, Version matrix](TESTING.md#version-matrix)). See the README's [Quick start](README.md#quick-start), [DAY-2.md](DAY-2.md), and [Set up](README.md#set-up).
 - **Your own nginx on Debian 13 (this page).** Debian's own nginx and ModSecurity packages, CRS from the CRS release, and the plugin's files where the image puts them. [`lua/tests/live/getting-started.sh`](../tests/live/getting-started.sh) runs this page's commands as written in a clean `debian:trixie` container and checks the results: `bash lua/tests/live/getting-started.sh` (Finch; `DOCKER=docker` for Docker).
 
 ## What you get on Debian
