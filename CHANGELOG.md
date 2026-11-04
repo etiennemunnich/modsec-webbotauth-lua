@@ -6,6 +6,7 @@ Versioning: git tags are `v0.1.0-beta.N` (earlier public cuts used `v0.1.0-alpha
 
 - Operator day-2: `wba-ops` entrypoint (init-bots, validate, agents, sync-keys, sync-lists dry-run-by-default, doctor read-only, debug-sig offline, unknown-agent suggest-only), `wba-keysync/deploy/` least-privilege templates, lean `lua/wba/DAY-2.md`. Fail-closed: no auto `--allow-private-*`, no auto-enroll.
 - Seed: activate `kernel-agent`, `kernel-search`, `exasearchbot` (first-party Signature-Agent documented); keep `agentcore-browser` / `browserbase` pending. Catalogue dual-`verified` banner in `BOTS.md`.
+- Docs: the shipped bot list is this project's local registry. `wba-keysync/bots.seed.yaml` is the starter copy; operators copy it to `bots.yaml`. This is not an IETF registry and not a public signup. The drafts do not define this file.
 
 ## v0.1.0-beta.1 (2026-11-01)
 
