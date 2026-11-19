@@ -104,8 +104,8 @@ Every file you set up or may change, in the order you meet them. "Plugins" is th
 
 | File | What it does | Who writes it | Where it goes |
 |---|---|---|---|
-| `bots.yaml` | Your list of bots: each one's key source (`wba`), IP lists, User-Agent tokens and policy ([Bot lists and policies](#bot-lists-and-policies)). Start from [`bots.seed.yaml`](../../wba-keysync/bots.seed.yaml) | you | anywhere on the key sync host |
-| `agents.txt` | The key sources key sync may fetch, one per line ([step 2](#2-list-the-bots-you-recognise)) | `agents.ts`, from `bots.yaml`; or you, by hand | the key sync host, given with `--origins` |
+| `bots.yaml` | Your copy of this project's local registry: each bot's key source (`wba`), IP lists, User-Agent tokens and policy ([Bot lists and policies](#bot-lists-and-policies)). [`wba-keysync/bots.seed.yaml`](../../wba-keysync/bots.seed.yaml) is the starter copy of the local registry | you | anywhere on the key sync host |
+| `agents.txt` | The key sources key sync may fetch, one per line, from the uncommented `wba:` lines ([step 2](#2-list-the-bots-you-recognise)) | `agents.ts`, from `bots.yaml`; or you, by hand | the key sync host, given with `--origins` |
 | `wba-keys.tsv` | The key store: every public key key sync accepted, read for each signed request | key sync | its directory, mounted at `/etc/modsecurity.d/wba/keys/` |
 | `wba-keys.tsv.cache.json`, `wba-keys.tsv.history` | Key sync's HTTP cache, and a record of every key added or removed, for attributing a signature later | key sync | next to the key store |
 | `web-bot-auth-bots-before.conf`, `web-bot-auth-bots/`, `versions.json`, `status.json`, `ids.json` | The bot list rules and their data, each list's version, what the last run did, and each bot's rule ids ([Bot lists and policies](#bot-lists-and-policies)) | `lists.ts`, from `bots.yaml` | the plugins directory, or mounted and included from it |
@@ -129,24 +129,24 @@ On top of the CRS image, the build adds [lua-openssl](https://github.com/zhaozg/
 
 ### 2. List the bots you recognise
 
-You keep your list of bots in a bots file, `bots.yaml`. Key sync reads a simpler file made from it, `agents.txt`, with one key source per line. An agent is a bot, or an AI agent that acts for a person. Only keys from the agents in `agents.txt` can ever produce `verified`. Listing an agent gives it no extra access.
+You keep your list of bots in a bots file, `bots.yaml`. That file is your copy of this project's local registry. Key sync reads a simpler file made from it, `agents.txt`, with one key source per line. An agent is a bot, or an AI agent that acts for a person. Only keys from the agents in `agents.txt` can ever produce `verified`. Listing an agent gives it no extra access.
 
-Start from the project's list, check it, and write `agents.txt` from it:
+`wba-keysync/bots.seed.yaml` is the starter copy of the local registry. Operators copy it to `bots.yaml`, delete or add bots, then `agents.ts` writes `agents.txt` from the uncommented `wba:` lines. `wba-keysync/cli.ts --origins agents.txt` fetches public keys only for those URLs. This is not an IETF registry and not a public signup. The drafts do not define this file.
 
 ```bash
-cp wba-keysync/bots.seed.yaml bots.yaml                        # 1. copy it, then delete the bots you do not recognise
+cp wba-keysync/bots.seed.yaml bots.yaml                        # 1. copy the starter, then delete or add bots
 bun wba-keysync/validate.ts bots.yaml                          # 2. check it: exit 1 on any failure; --strict also fails on warnings
-bun wba-keysync/agents.ts bots.yaml --out /srv/wba/agents.txt  # 3. write agents.txt from it
+bun wba-keysync/agents.ts bots.yaml --out /srv/wba/agents.txt  # 3. write agents.txt from the uncommented wba: lines
 ```
 
-**The project's list.** [`wba-keysync/bots.seed.yaml`](../../wba-keysync/bots.seed.yaml) uses the operators' own sources only, and explains its fields at the top. [`wba-keysync/BOTS.md`](../../wba-keysync/BOTS.md) is generated from it: each bot's category, its operator's description, every source and what it answered, and whether the bot is confirmed (its keys or IP list were fetched from the operator and checked) or only a claim. BOTS.md calls a confirmed bot `verified`; that is not the plugin's `verified`, which means a request's signature checked out. Most bots do not sign yet: only the few with a `wba` key source end up in `agents.txt`.
+**The shipped starter.** On current main the uncommented `wba:` lines are six URLs: `https://you.com`, `https://chatgpt.com`, `https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev`, `https://www.kernel.sh`, `https://search.bot.kernel.sh` and `https://crawler.exa.ai`. Commented `wba:` lines are known bots not in the registry. [`wba-keysync/bots.seed.yaml`](../../wba-keysync/bots.seed.yaml) uses the operators' own sources only, and explains its fields at the top. [`wba-keysync/BOTS.md`](../../wba-keysync/BOTS.md) is generated from it: each bot's category, its operator's description, every source and what it answered, and whether the bot is confirmed (its keys or IP list were fetched from the operator and checked) or only a claim. BOTS.md calls a confirmed bot `verified`; that is not the plugin's `verified`, which means a request's signature checked out. Most bots do not sign yet: only the few with a `wba` key source end up in `agents.txt`.
 
 **Check a list of bots before you trust it**, this one or any you are offered. [`wba-keysync/validate.ts`](../../wba-keysync/validate.ts) checks every entry against the bot operator's own sources:
 - its key directory, fetched the same way key sync fetches it, with its proof (a signature the directory carries to show it holds each key; see [DESIGN.md](DESIGN.md#possession-proofs));
 - its published IP lists;
 - any hand-kept copy of those IP ranges. It reports which ranges are stale, which are missing, and how much of the live list the copy covers.
 
-**Write `agents.txt`.** [`wba-keysync/agents.ts`](../../wba-keysync/agents.ts) writes one line for each bot with a `wba` key source, and leaves the others out. Every line passes key sync's own parser: a bad entry stops it before anything is written. Bots that share a key source share one line. `--only name,name` writes only the bots you name. Run it again whenever you change `bots.yaml`: key sync picks up the new list on its next run.
+**Write `agents.txt`.** [`wba-keysync/agents.ts`](../../wba-keysync/agents.ts) writes `agents.txt` from the uncommented `wba:` lines, and leaves bots with no `wba` out. Every line passes key sync's own parser: a bad entry stops it before anything is written. Bots that share a key source share one line. `--only name,name` writes only the bots you name. Run it again whenever you change `bots.yaml`: key sync picks up the new list on its next run.
 
 You can also write `agents.txt` by hand, at any path you give key sync with `--origins`:
 
@@ -170,7 +170,7 @@ Copy each decision into the bot's entry in `bots.yaml` as `policy:`. [`lists.ts`
 
 ### 3. Keep their keys current
 
-[`wba-keysync`](../../wba-keysync/cli.ts) (key sync) fetches the keys of each agent in `agents.txt`. It writes them to the key store, the file of public keys the verifier reads. Run it every minute. It fetches a directory again only when its HTTP cache lifetime has run out, so most runs send no request at all. It never runs while a request waits. It fetches the URLs in your `agents.txt`, and the `jwks_uri` that a listed CIMD document names (that document's server chooses it, so it always gets the private-address check).
+[`wba-keysync/cli.ts`](../../wba-keysync/cli.ts) `--origins agents.txt` fetches public keys only for those URLs. It writes them to the key store, the file of public keys the verifier reads. Run it every minute. It fetches a directory again only when its HTTP cache lifetime has run out, so most runs send no request at all. It never runs while a request waits. A listed CIMD document can also name a `jwks_uri` (that document's server chooses it, so that hop always gets the private-address check).
 
 The examples below are for a Linux host. The repository is at `/opt/web-bot-auth`, the files are in `/srv/wba`, and key sync runs as the user `wba`. Use your own paths and user. Cron's `PATH` does not include Bun's default install directory (`~/.bun/bin`), so give the full path that `command -v bun` prints.
 

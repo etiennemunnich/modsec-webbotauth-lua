@@ -12,8 +12,8 @@ This page explains, with diagrams, how a bot signs a request, how the bots' keys
 | **Signature** | A short value the bot computes over parts of its request with its private key. Only the private key's holder can produce it, and changing a signed part breaks it. |
 | **Key directory** | A file the bot operator publishes on its own website, at `https://<their site>/.well-known/http-message-signatures-directory`, listing its public keys. |
 | **`Signature-Agent`** | A request header in which the bot names its key directory. |
-| **`agents.txt`** | The list of the bots you recognise, one key source per line. You keep your list in `bots.yaml`, and `agents.ts` writes `agents.txt` from it. Keys from bots not on it are never trusted. |
-| **Key sync** | `wba-keysync`, a small program you run on a timer. It fetches the key directories of the bots in `agents.txt` and writes their public keys to the key store. |
+| **`agents.txt`** | The key sources key sync may fetch, one per line. `wba-keysync/bots.seed.yaml` is the starter copy of the local registry. Operators copy it to `bots.yaml`, delete or add bots, then `agents.ts` writes `agents.txt` from the uncommented `wba:` lines. This is not an IETF registry and not a public signup. The drafts do not define this file. Keys from bots not on `agents.txt` are never trusted. |
+| **Key sync** | `wba-keysync`, a small program you run on a timer. `wba-keysync/cli.ts --origins agents.txt` fetches public keys only for those URLs and writes them to the key store. |
 | **Key store** | `wba-keys.tsv`, the file of public keys the WAF reads. |
 | **Verifier** | This plugin's checking code. It runs inside ModSecurity, in front of your application, and decides whether a request's signature is genuine. |
 | **Outcome** | The verifier's verdict, written into ModSecurity variables: `tx.wba_status` (`verified`, `invalid`, `unverified` or `not-signed`) and `tx.wba_reason` (why). |
@@ -22,7 +22,7 @@ This page explains, with diagrams, how a bot signs a request, how the bots' keys
 
 ## The big picture
 
-Two things happen at different times. **Ahead of time**, your key sync copies the public keys of the bots you recognise onto your WAF. **On each request**, the verifier checks the signature against those copied keys, gives the request an outcome, and your rules and CRS act on it. The verifier never fetches anything while a request waits.
+Two things happen at different times. **Ahead of time**, your key sync copies the public keys for the URLs in your local registry onto your WAF. **On each request**, the verifier checks the signature against those copied keys, gives the request an outcome, and your rules and CRS act on it. The verifier never fetches anything while a request waits.
 
 ```mermaid
 flowchart LR
@@ -31,7 +31,7 @@ flowchart LR
         DIR["Key directory<br/>(public keys, on their website)"]
     end
     subgraph YourSide["Your site"]
-        AG["agents.txt<br/>(bots you recognise)"]
+        AG["agents.txt<br/>(local registry)"]
         KS["Key sync<br/>(cron, every minute)"]
         STORE["Key store<br/>wba-keys.tsv"]
         WAF["nginx + ModSecurity<br/>verifier, then CRS and your rules"]
@@ -74,7 +74,7 @@ The `keyid` is the key's [RFC 7638](https://www.rfc-editor.org/rfc/rfc7638) thum
 
 ## 2. How the bots' keys reach your WAF
 
-Key sync runs on a timer (cron or systemd, every minute). It only fetches the bots listed in `agents.txt`, only over HTTPS, and only when its cached copy has expired, so most runs make no request at all. It never runs while a request waits.
+Key sync runs on a timer (cron or systemd, every minute). `wba-keysync/cli.ts --origins agents.txt` fetches public keys only for those URLs, only over HTTPS, and only when its cached copy has expired, so most runs make no request at all. It never runs while a request waits. On current main the starter's uncommented `wba:` lines are six URLs: `https://you.com`, `https://chatgpt.com`, `https://web-bot-auth.cloudflare-browser-rendering-085.workers.dev`, `https://www.kernel.sh`, `https://search.bot.kernel.sh` and `https://crawler.exa.ai`. Commented `wba:` lines are known bots not in the registry.
 
 ```mermaid
 sequenceDiagram
