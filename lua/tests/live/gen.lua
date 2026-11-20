@@ -23,21 +23,20 @@ local KEY, KEY2 = key("key1", "ed25519"), key("key2", "ed25519")
 local KEY3 = key("key3", "ed25519") -- in the store with an exp already past: key-not-current
 local P256, P384 = key("p256", "p256"), key("p384", "p384")
 local RSA_PSS, RSA_V15, RSA_NOALG = key("rsa-pss", "rsa"), key("rsa-v15", "rsa"), key("rsa-noalg", "rsa")
-local JWKS_KEY, CIMD_KEY, PROOF_KEY = key("jwks", "ed25519"), key("cimd", "ed25519"), key("proof", "ed25519")
--- Draft 5.5: a jwks_uri or cimd member is its own identifier (query dropped);
--- a directory's is its well-known URI.
-local JWKS, CIMD = "https://jwks.example/keys.json", "https://cimd.example/client.json"
-local PROOF_AGENT = "https://proof.example"
+local JWKS_KEY, OTHER_KEY, PROOF_KEY = key("jwks", "ed25519"), key("cimd", "ed25519"), key("proof", "ed25519")
+-- protocol-01: every Signature-Agent value is a direct JWKS URI (query dropped).
+local JWKS, OTHER_JWKS = "https://jwks.example/keys.json", "https://cimd.example/client.json"
+local PROOF_AGENT = "https://proof.example/.well-known/http-message-signatures-directory"
 -- paranoia.sh: Signature-Agent members with percent-encoded characters (RFC
 -- 3986 2.1), each with its own key. %7E is "~", an unreserved character, so
 -- the identifier holds "~" (6.2.2.2, draft 5.5); the others stay encoded: a
 -- space (%20), "é" in UTF-8 (%C3%A9, 3986 2.5) and a literal "%" (%25).
 local PCT = {
-    { case = "agent-pct-tilde", type = "jwks_uri", url = "https://jwks.example/%7Ebot/keys.json",
+    { case = "agent-pct-tilde", url = "https://jwks.example/%7Ebot/keys.json",
       id = "https://jwks.example/~bot/keys.json" },
-    { case = "agent-pct-space", type = "cimd", url = "https://cimd.example/clients/bot%20one.json" },
-    { case = "agent-pct-utf8", type = "jwks_uri", url = "https://jwks.example/caf%C3%A9/keys.json" },
-    { case = "agent-pct-percent", type = "cimd", url = "https://cimd.example/clients/100%25/client.json" },
+    { case = "agent-pct-space", url = "https://cimd.example/clients/bot%20one.json" },
+    { case = "agent-pct-utf8", url = "https://jwks.example/caf%C3%A9/keys.json" },
+    { case = "agent-pct-percent", url = "https://cimd.example/clients/100%25/client.json" },
 }
 for _, p in ipairs(PCT) do p.key = key(p.case, "ed25519") end
 -- pcre-limit.sh: a 4096-bit RSA key, for the longest Signature header (a
@@ -53,9 +52,9 @@ if MODE == "keys" then
         H.store_line(H.AGENT_ID, P256), H.store_line(H.AGENT_ID, P384),
         H.store_line(H.AGENT_ID, RSA_PSS, "rsa-pss-sha512"), H.store_line(H.AGENT_ID, RSA_V15, "rsa-v1_5-sha256"),
         H.store_line(H.AGENT_ID, RSA_NOALG), -- no JWK alg: the signature's alg decides (RFC 9421 3.2 step 6)
-        H.store_line(JWKS, JWKS_KEY), H.store_line(CIMD, CIMD_KEY),
+        H.store_line(JWKS, JWKS_KEY), H.store_line(OTHER_JWKS, OTHER_KEY),
         -- key-sync recorded a valid Appendix B proof for this directory's key
-        H.store_line(PROOF_AGENT .. "/.well-known/http-message-signatures-directory", PROOF_KEY, nil,
+        H.store_line(PROOF_AGENT, PROOF_KEY, nil,
             "valid\t" .. (os.time() + 86400)),
     }
     for _, p in ipairs(PCT) do lines[#lines + 1] = H.store_line(p.id or p.url, p.key) end
@@ -290,11 +289,12 @@ case("alg-rsa-declared", { key = RSA_NOALG, alg = "rsa-v1_5-sha256" })
 case("alg-mismatch", { key = RSA_PSS, alg = "rsa-v1_5-sha256" }) -- the JWK pins rsa-pss-sha512
 case("alg-ecdsa-der", { key = P256, der = true })           -- RFC 9421 3.3.4: r || s, never DER
 case("alg-hmac", { alg = "hmac-sha256", sign_alg = "ed25519" })
--- Draft 5.5: jwks_uri and cimd members; a key with a valid Appendix B proof.
-case("agent-jwks", { key = JWKS_KEY, member = '"' .. JWKS .. '?v=2";type=jwks_uri' })
-case("agent-cimd", { key = CIMD_KEY, member = '"' .. CIMD .. '";type=cimd' })
-case("agent-jwks-wrong-type", { key = JWKS_KEY, member = '"' .. JWKS .. '"' }) -- a directory member is the well-known URI
+-- protocol-01: path JWKS URIs; parameterized members ignored; Appendix B proof.
+case("agent-jwks", { key = JWKS_KEY, member = '"' .. JWKS .. '?v=2"' })
+case("agent-cimd", { key = OTHER_KEY, member = '"' .. OTHER_JWKS .. '"' }) -- another path JWKS (name kept for live scripts)
+case("agent-jwks-wrong-type", { key = JWKS_KEY, member = '"' .. JWKS .. '";type=jwks_uri' }) -- parameterized: ignored
 case("agent-proof", { key = PROOF_KEY, member = '"' .. PROOF_AGENT .. '"' })
+case("parameterized-agent", { member = '"' .. H.AGENT .. '";type=carrier-pigeon' })
 
 -- RFC 9530 and draft-ietf-httpbis-unencoded-digest-05: signatures over a
 -- digest field, decided in phase 2. openssl computes every digest,
@@ -344,7 +344,7 @@ if only == "pl-digest-b64-32" then body_case(only, { body = '{"n": 1580}' }) end
 -- paranoia.sh only, sent by name: Signature-Agent URLs with percent-encoded
 -- characters (PCT above).
 for _, p in ipairs(PCT) do
-    if only == p.case then case(only, { key = p.key, member = '"' .. p.url .. '";type=' .. p.type }) end
+    if only == p.case then case(only, { key = p.key, member = '"' .. p.url .. '"' }) end
 end
 -- getting-started.sh only, sent by name: body-match with one byte of the body
 -- changed after signing ("world" became "worle"), over HTTP/1.1 and HTTP/2.
@@ -410,7 +410,7 @@ case("ambiguous-agent", { agent_header = 'a1="https://agent.example", a2="https:
     lines = { '"@authority": example.com', '"signature-agent";key="a1": "https://agent.example"',
         '"signature-agent";key="a2": "https://other.example"' } })
 case("agent-not-https", { member = '"http://agent.example"' })
-case("unsupported-agent-type", { member = '"' .. H.AGENT .. '";type=carrier-pigeon' })
+-- parameterized-agent is defined above with the other protocol-01 discovery cases
 case("unparsable-agent", { agent_header = 'agent1="https://x', components = '"@authority" "signature-agent"', -- covered whole
     lines = { '"@authority": example.com', '"signature-agent": agent1="https://x' } })
 case("test-key", { keyid = "poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U" }) -- a published test key: refused before lookup

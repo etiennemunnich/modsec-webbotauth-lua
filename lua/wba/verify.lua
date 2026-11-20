@@ -107,16 +107,13 @@ end
 -- (draft 4.3): the identifier is the keyid thumbprint itself.
 local URL_LESS = {}
 
--- Signature-Agent member types (draft 5.5); all three resolve to a JWKS.
-local AGENT_TYPES = { directory = true, jwks_uri = true, cimd = true }
-
 -- Component values live in components.lua (RFC 9421 2.1, 2.2). trim_ows and
 -- ascii_lower are re-exported for modsecurity_entry.lua.
 M.trim_ows, M.ascii_lower = components.trim_ows, components.ascii_lower
 local field_value = components.field_value
 
---- The key-directory identifier this signature is attributed to, or
---- nil, status, reason.
+--- The JWK Set identifier this signature is attributed to, or nil, status,
+--- reason (draft-ietf-webbotauth-httpsig-protocol-01 §5.2.1 / §5.5).
 ---
 --- Which member. Draft 5.2.1 names the member keyed to the signature's
 --- label; 5.2.2 forbids one the signature does not cover. But the label is
@@ -127,7 +124,12 @@ local field_value = components.field_value
 ---     label, which must be covered (D.2: an outer signer also covers the
 ---     inner signer's member, as evidence, not as its own identity)
 --- A relabel can only choose among members the signer covered, and the key
---- must still be listed under that directory to verify (draft 5.4).
+--- must still be listed under that URL to verify (draft 5.4).
+---
+--- protocol-01: the member value is a direct HTTPS JWK Set URI. Members MUST
+--- NOT carry parameters; a parameterized member is ignored. Legacy bare
+--- sf-string Signature-Agent is still accepted (Cloudflare edge dual-parse).
+--- There is no origin→well-known rewrite on the wire.
 local function resolve_agent(label, items, req, agent_field, ignore_malformed)
     local count, whole, keyed, only = 0, false, {}, nil
     for _, item in ipairs(items) do
@@ -179,40 +181,24 @@ local function resolve_agent(label, items, req, agent_field, ignore_malformed)
     if member.kind ~= "item" or member.value.type ~= "string" then
         return nil, "unverified", "bad-agent-url"
     end
-    -- Draft 5.2.1: type is a Token naming the discovery mechanism, directory
-    -- when absent; a type this verifier does not support is ignored, and the
-    -- mechanism is never inferred from the URL.
-    local t = sf.param(member.params, "type")
-    local kind = "directory"
-    if t ~= nil then
-        if t.type ~= "token" or not AGENT_TYPES[t.value] then
-            return nil, "unverified", "unsupported-agent-type"
-        end
-        kind = t.value
+    -- protocol-01 §5.2.1: dictionary members MUST NOT carry parameters; a
+    -- verifier MUST ignore a parameterized member (including obsolete
+    -- ;type=directory|jwks_uri|cimd from draft -00).
+    if #member.params > 0 then
+        return nil, "unverified", "bad-agent-url"
     end
     -- Draft 5.2.1: the scheme MUST be https. Another scheme fails a check
-    -- (C.1: invalid). Draft 5.5: a directory member that is not an origin is
-    -- ignored, whatever its scheme, which leaves nothing to resolve
-    -- (unverified); so only an origin with another scheme is invalid.
+    -- (C.1: invalid). A value that is not an https URI is ignored
+    -- (unverified/bad-agent-url).
     local value = member.value.value
     local scheme = value:match("^([A-Za-z][A-Za-z0-9+.%-]*):")
     if scheme and components.ascii_lower(scheme) ~= "https" then
-        if kind == "directory" and not keys.identifier("https" .. value:sub(#scheme + 1), true) then
-            return nil, "unverified", "bad-agent-url"
-        end
         return nil, "invalid", "agent-not-https"
     end
-    -- Draft 5.5: the identifier is the URL resolved, query and fragment
-    -- discarded, in normal form. directory: strictly the ASCII serialization
-    -- of an origin (RFC 6454 6.2), so an explicit default port is ignored.
-    -- jwks_uri and cimd: the member value itself. Lookup is keyed on that
-    -- identifier alone (5.4: the (URL, key) pair); key-sync resolved it.
-    local id
-    if kind == "directory" then
-        id = keys.identifier(member.value.value, true)
-    else
-        id = keys.url_identifier(member.value.value)
-    end
+    -- protocol-01 §5.5: fetch the member value directly as a JWK Set; the
+    -- identifier is that URL with query/fragment discarded, in normal form.
+    -- No origin→well-known rewrite.
+    local id = keys.url_identifier(value)
     if not id then return nil, "unverified", "bad-agent-url" end
     return id
 end

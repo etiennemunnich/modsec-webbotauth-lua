@@ -21,7 +21,7 @@
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_LIMITS, format, identifier, keysFromDirectory } from "./keysync.ts";
+import { DEFAULT_LIMITS, format, identifier, keysFromDirectory, urlIdentifier, WELL_KNOWN } from "./keysync.ts";
 
 const DEFAULT_AGENT = "https://test-agent.example";
 
@@ -36,12 +36,18 @@ usage: wba-sign init <dir> [--agent URL]
 const q = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
 const b64url = (b: Uint8Array) => Buffer.from(b).toString("base64url");
 
-/** The key store for one Ed25519 public key, listed under the agent's directory. */
+/** Resolve --agent to the JWKS URL used on the wire and in the store (protocol-01). */
+export function agentJwksUrl(agent: string): string | null {
+  return identifier(agent) ?? urlIdentifier(agent);
+}
+
+/** The key store for one Ed25519 public key, listed under the agent's JWKS URL. */
 export async function storeFor(pub: JsonWebKey, agent: string, now: number): Promise<{ text: string; keyid: string }> {
-  const id = identifier(agent);
-  if (!id) throw new Error(`${agent} is not an https origin`);
+  const id = agentJwksUrl(agent);
+  if (!id) throw new Error(`${agent} is not an https JWKS URL`);
   const warnings: string[] = [];
-  const entries = await keysFromDirectory({ keys: [pub] }, DEFAULT_LIMITS, now, (m) => warnings.push(m), true);
+  const atWellKnown = new URL(id).pathname === WELL_KNOWN;
+  const entries = await keysFromDirectory({ keys: [pub] }, DEFAULT_LIMITS, now, (m) => warnings.push(m), atWellKnown);
   if (entries.length !== 1) throw new Error(`key not usable: ${warnings.join("; ")}`);
   return { text: format([{ ...entries[0], identifier: id }], new Date(now * 1000)), keyid: entries[0].keyid };
 }
@@ -55,7 +61,9 @@ export async function signRequest(o: {
   // RFC 9421 2.2.3: lowercase host, and the port unless it is the scheme's default.
   const authority = (o.host ?? o.url.host).toLowerCase();
   const nonce = b64url(crypto.getRandomValues(new Uint8Array(32)));
-  const member = JSON.stringify(o.agent); // an sf-string: the URL has no '"' or '\' (identifier() checked)
+  const sa = agentJwksUrl(o.agent);
+  if (!sa) throw new Error(`${o.agent} is not an https JWKS URL`);
+  const member = JSON.stringify(sa); // an sf-string: the URL has no '"' or '\'
   const comps = `("@method" "@authority" "@path" "signature-agent";key="sig1")`;
   const params = `${comps};created=${o.now};expires=${o.now + o.expires};keyid="${o.keyid}";alg="ed25519"`
     + `;nonce="${nonce}";tag="web-bot-auth"`;

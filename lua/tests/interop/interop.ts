@@ -59,7 +59,7 @@ public key set: ${pubPath}
 Serve the public key set from an https URL you control, as JSON, then add
 that URL to agents.txt and let key sync pick it up:
 
-  https://www.example.com/.well-known/wba-interop.jwks.json type=jwks_uri
+  https://www.example.com/.well-known/wba-interop.jwks.json
 
 Never add it to tx.wba_grant_agents: the interop agent must be granted nothing.`);
 }

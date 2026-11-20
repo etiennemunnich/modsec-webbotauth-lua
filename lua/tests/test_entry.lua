@@ -432,13 +432,13 @@ do
 end
 H.pass("tx.wba_grant_require_components: the operator's list decides the grant; a component it names and the signature lacks refuses it")
 
--- 12. Agent types (draft 5.5) and the Appendix B proof fact, through the entry.
+-- 12. Path JWKS URIs (protocol-01) and the Appendix B proof fact, through the entry.
 tx = run_entry(signed_headers())
 H.eq(tx["tx.wba_agent_proof"], "valid", "the store's proof for the verifying key")
-local jwks = signed_headers({ member = '"' .. JWKS .. '?v=2";type=jwks_uri' })
+local jwks = signed_headers({ member = '"' .. JWKS .. '?v=2"' })
 tx = run_entry(jwks)
 H.eq(tx["tx.wba_status"] .. "/" .. tx["tx.wba_reason"], "verified/")
-H.eq(tx["tx.wba_agent"], JWKS, "the jwks_uri identifier, query discarded")
+H.eq(tx["tx.wba_agent"], JWKS, "the JWKS identifier, query discarded")
 H.eq(tx["tx.wba_agents"], JWKS)
 H.eq(tx["tx.wba_agent_proof"], "none")
 tx = run_entry(ul)
@@ -446,18 +446,18 @@ H.eq(tx["tx.wba_agent_proof"], nil, "URL-less: no agent, no proof")
 tx = run_entry(signed_headers({ host = "evil.example" }))
 H.eq(tx["tx.wba_agent_proof"], nil, "no proof on invalid")
 tx = with({ ["tx.wba_grant_agents"] = JWKS, ["tx.wba_grant_require_components"] = "none" }, jwks)
-H.eq(tx["tx.wba_granted"], "1", "a jwks_uri identifier, written in normal form, is granted exactly")
+H.eq(tx["tx.wba_granted"], "1", "a JWKS identifier, written in normal form, is granted exactly")
 tx = with({ ["tx.wba_grant_agents"] = JWKS, ["tx.wba_grant_require_components"] = "none" }, signed_headers())
-H.eq(tx["tx.wba_granted"], nil, "a jwks_uri grant never grants the origin's directory")
+H.eq(tx["tx.wba_granted"], nil, "a path-JWKS grant never grants the well-known directory")
 tx = with({ ["tx.wba_grant_agents"] = H.AGENT, ["tx.wba_grant_require_components"] = "none" }, jwks)
-H.eq(tx["tx.wba_granted"], nil, "an origin grant never grants a jwks_uri on it")
+H.eq(tx["tx.wba_granted"], nil, "a well-known grant never grants a different path JWKS")
 for _, value in ipairs({ JWKS .. "?v=2", "https://Agent.example/jwks.json", "https://agent.example/x/../jwks.json" }) do
     local c
     tx, c = with({ ["tx.wba_grant_agents"] = value })
     H.eq(tx["tx.wba_status"] .. "/" .. tx["tx.wba_reason"], "unverified/bad-config", "grant not in normal form: " .. value)
     H.eq(#c.log, 1)
 end
-H.pass("jwks_uri agents verify through the entry; tx.wba_agent_proof set with the agent only; grants exact on identifiers")
+H.pass("path JWKS agents verify through the entry; tx.wba_agent_proof set with the agent only; grants exact on identifiers")
 
 -- 13. ECDSA and RSA keys in a version 2 store, end to end through the entry
 -- and keys.lua; and a version 1 store (Ed25519 only, no proof) still read.

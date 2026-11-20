@@ -62,7 +62,9 @@ H.eq(r.keyid, KEY.keyid)
 H.pass("draft-shaped request (dictionary Signature-Agent, ;key= coverage) verifies; agent is the well-known URL")
 
 -- 2. Draft E.2 vectors, verbatim headers, RFC 9421 B.1.4 key.
-local E_STORE = { ["https://signature-agent.test/.well-known/http-message-signatures-directory"] =
+-- protocol-01: the vectors still send an origin-only Signature-Agent; that
+-- value is the JWKS URI (root), not rewritten to the well-known path.
+local E_STORE = { ["https://signature-agent.test/"] =
     { [H.RFC_KEYID] = { type = "ed25519", key = H.RFC_KEY_RAW } } }
 local e22 = H.request({ headers = {
     { "Signature-Agent", '"https://signature-agent.test"' },
@@ -153,45 +155,52 @@ expect(run(signed({ components = '"@authority" "signature-agent";key="agent1" "s
 H.pass("must cover @authority and a Signature-Agent member it can be attributed to (draft 5.2, 5.2.1)")
 
 -- 7. Attribution cannot be moved to someone else
-local VICTIM = "https://victim.example"
-local VICTIM_ID = VICTIM .. "/.well-known/http-message-signatures-directory"
+local VICTIM_ID = "https://victim.example/.well-known/http-message-signatures-directory"
 local both = { [H.AGENT_ID] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } }, [VICTIM_ID] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } } }
-expect(run(signed({ agent_header = 'agent1="' .. VICTIM .. '"' }), { store = both }), "invalid", "bad-signature",
+expect(run(signed({ agent_header = 'agent1="' .. VICTIM_ID .. '"' }), { store = both }), "invalid", "bad-signature",
     "swapping the covered member's URL breaks the signature")
 expect(run(signed(), { store = { [VICTIM_ID] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } } } }), "unverified", "unknown-agent",
-    "the key only counts for the directory it was resolved from")
+    "the key only counts for the JWKS URL it was resolved from")
 expect(run(signed(), { store = { [H.AGENT_ID] = { [KEY2.keyid] = { type = "ed25519", key = KEY2.raw } } } }), "unverified", "unknown-key")
 expect(run(signed({ key = KEY2 }), { store = { [H.AGENT_ID] = { [KEY2.keyid] = { type = "ed25519", key = KEY.raw } } } }), "invalid", "bad-signature",
     "store entry under the right keyid but the wrong key")
-H.pass("lookup keyed on (directory, keyid): a key never verifies for another agent (draft 5.4)")
+H.pass("lookup keyed on (JWKS URL, keyid): a key never verifies for another agent (draft 5.4)")
 
--- 8. Signature-Agent member must be an https origin of type directory
+-- 8. Signature-Agent member must be a direct https JWK Set URI (protocol-01 §5.2.1)
 local function agent_case(url_member)
     return signed({ agent_header = "agent1=" .. url_member,
         lines = { '"@authority": example.com', '"signature-agent";key="agent1": ' .. url_member } })
 end
 expect(run(agent_case('"http://agent.example"')), "invalid", "agent-not-https", "draft 5.2.1: the scheme MUST be https")
-expect(run(agent_case('"http://agent.example/path"')), "unverified", "bad-agent-url",
-    "draft 5.5: a directory member that is not an origin is ignored, whatever its scheme")
-expect(run(agent_case('"http://agent.example/path";type=jwks_uri')), "invalid", "agent-not-https",
-    "draft 5.2.1: a jwks_uri must be https")
-expect(run(agent_case('"https://agent.example/keys"')), "unverified", "bad-agent-url")
-expect(run(agent_case('"file:///etc/passwd"')), "unverified", "bad-agent-url", "not an origin: ignored (5.5)")
-expect(run(agent_case('"file:///etc/passwd";type=cimd')), "invalid", "agent-not-https", "a cimd URL must be https (5.2.1)")
-expect(run(agent_case('"HTTPS://agent.example"')), "unverified", "bad-agent-url", "https, but not the ASCII serialization of an origin: ignored (5.5)")
-expect(run(agent_case('"https://Agent.example"')), "unverified", "bad-agent-url", "an origin's serialization is lowercase (RFC 6454 6.2)")
+expect(run(agent_case('"http://agent.example/path"')), "invalid", "agent-not-https",
+    "draft 5.2.1: any non-https scheme fails the check")
+expect(run(agent_case('"http://agent.example/path";type=jwks_uri')), "unverified", "bad-agent-url",
+    "protocol-01: parameterized members are ignored before the scheme check")
+local ROOT_STORE = { ["https://agent.example/"] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } } }
+local PATH_STORE = { ["https://agent.example/keys"] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } } }
+expect(run(agent_case('"https://agent.example/keys"'), { store = PATH_STORE }),
+    "verified", "", "protocol-01: an untyped path JWKS URI is the happy path")
+expect(run(agent_case('"file:///etc/passwd"')), "invalid", "agent-not-https", "non-https scheme")
+expect(run(agent_case('"file:///etc/passwd";type=cimd')), "unverified", "bad-agent-url",
+    "parameterized member ignored (protocol-01 §5.2.1)")
+expect(run(agent_case('"HTTPS://agent.example"'), { store = ROOT_STORE }),
+    "verified", "", "scheme/host lowercased; origin-only is JWKS-at-root (no well-known rewrite)")
+expect(run(agent_case('"https://Agent.example"'), { store = ROOT_STORE }),
+    "verified", "", "host lowercased in the identifier (RFC 3986 6.2.2)")
 expect(run(agent_case('"agent.example"')), "unverified", "bad-agent-url", "not a URI: the field MAY be ignored (5.2.1)")
-expect(run(agent_case('"https://agent.example";type=x509')), "unverified", "unsupported-agent-type")
-expect(run(agent_case('"https://agent.example";type="jwks_uri"')), "unverified", "unsupported-agent-type",
-    "type is a Token (5.2.1); a String is not a type this verifier supports")
-expect(run(agent_case('"https://agent.example";type=jwks_uri')), "unverified", "unknown-agent",
-    "a jwks_uri member is its own identifier (https://agent.example/), not the origin's directory")
+expect(run(agent_case('"https://agent.example";type=x509')), "unverified", "bad-agent-url",
+    "protocol-01: any parameterized member is ignored")
+expect(run(agent_case('"https://agent.example";type="jwks_uri"')), "unverified", "bad-agent-url")
+expect(run(agent_case('"https://agent.example";type=jwks_uri')), "unverified", "bad-agent-url",
+    "obsolete ;type=jwks_uri must be ignored, not treated as success")
 expect(run(agent_case("agent")), "unverified", "bad-agent-url")
-expect(run(agent_case('"https://agent.example";type=directory')), "verified", "", "explicit type=directory")
-expect(run(agent_case('"https://agent.example:443"')), "unverified", "bad-agent-url",
-    "an explicit default port is not the origin's ASCII serialization (5.5, RFC 6454 6.2): ignored")
-expect(run(agent_case('"https://agent.example/"')), "verified", "", "an empty path / MAY be accepted (5.5)")
-H.pass("non-https members fail (invalid, 5.2.1); path-carrying, non-origin and unknown-type members are ignored (unverified, 5.5)")
+expect(run(agent_case('"https://agent.example";type=directory')), "unverified", "bad-agent-url",
+    "obsolete ;type=directory must be ignored")
+expect(run(agent_case('"https://agent.example:443"'), { store = ROOT_STORE }),
+    "verified", "", "default port dropped in the identifier (RFC 3986 6.2.3)")
+expect(run(agent_case('"https://agent.example/"'), { store = ROOT_STORE }),
+    "verified", "", "empty path / is the JWKS-at-root identifier")
+H.pass("protocol-01: direct JWKS URI; parameterized members ignored; no origin→well-known rewrite")
 
 -- 9. Signature-Agent shapes
 expect(run(signed({ agent_header = '"' .. H.AGENT .. '"', components = '"@authority" "signature-agent"',
@@ -374,8 +383,8 @@ H.pass("OWS trim is linear (32 KB of spaces), ASCII-only lowercase, no store rea
 -- 14c. Draft Appendix D.2: a remote browser signs its own request and also
 -- covers the agent's member and signature fields. Each signature is
 -- attributed to the member keyed to its own label, never to the other one.
-local BROWSER = "https://browser.example"
-local BROWSER_ID = BROWSER .. "/.well-known/http-message-signatures-directory"
+local BROWSER_ID = "https://browser.example/.well-known/http-message-signatures-directory"
+local BROWSER = BROWSER_ID
 local function d2()
     local P = ';created=%d;expires=%d;keyid="%s";tag="web-bot-auth"'
     local a_input = '("@method" "@authority" "@path" "signature-agent";key="agent")' .. P:format(NOW - 10, NOW + 300, KEY.keyid)
@@ -401,7 +410,7 @@ expect(r, "verified", "", "inner signature verifies on its own")
 H.eq(r.label, "agent")
 expect(run(d2(), { store = { [H.AGENT_ID] = { [KEY2.keyid] = { type = "ed25519", key = KEY2.raw } } } }), "unverified", "unknown-key",
     "the outer signer is never attributed to the inner signer's directory, even if that lists its key")
-local OTHER = "https://other-agent.example"
+local OTHER = "https://other-agent.example/.well-known/http-message-signatures-directory"
 local function two_members(label)
     return signed({ label = label, agent_header = 'agent1="' .. OTHER .. '", agent2="' .. H.AGENT .. '"',
         components = '"@authority" "signature-agent";key="agent1" "signature-agent";key="agent2"',
@@ -1152,65 +1161,73 @@ for _, t in ipairs({ "BHj8s0GPnMEQtkaULIM-PLgEhLBbuGUQ1vMxmBWZzEo", "oD0HwocPBSf
     H.eq(verify.TEST_KEY_THUMBPRINTS[t], true, t)
 end
 H.pass("draft E.1.1 and E.1.2 (rsa-pss-sha512) verify; RFC 9421 B.1.1-B.1.3 and the JOSE example keys are test keys")
--- 14l. Draft 5.5: jwks_uri and cimd members. Each is its own identifier,
--- the member value in normal form with query and fragment discarded, looked
--- up in the store key-sync filled from the operator's list (5.4: keyed on
--- the (URL, key) pair).
+-- 14l. protocol-01 §5.5: every Signature-Agent value is a direct JWK Set URI.
+-- Identifier = member value in normal form with query and fragment discarded
+-- (5.4: keyed on the (URL, key) pair). Parameterized members are ignored.
 local WK = "/.well-known/http-message-signatures-directory"
-local JWKS, CIMD = "https://agent.example/keys/jwks.json", "https://agent.example/card"
-local typed = { [JWKS] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } }, [CIMD] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } } }
-r = run(agent_case('"' .. JWKS .. '";type=jwks_uri'), { store = typed })
-expect(r, "verified", "", "type=jwks_uri")
+local JWKS, OTHER_JWKS = "https://agent.example/keys/jwks.json", "https://agent.example/card"
+local jwks_store = { [JWKS] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } },
+    [OTHER_JWKS] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } } }
+r = run(agent_case('"' .. JWKS .. '"'), { store = jwks_store })
+expect(r, "verified", "", "untyped path JWKS URI")
 H.eq(r.agent, JWKS)
-r = run(agent_case('"' .. CIMD .. '";type=cimd'), { store = typed })
-expect(r, "verified", "", "type=cimd")
-H.eq(r.agent, CIMD)
+r = run(agent_case('"' .. OTHER_JWKS .. '"'), { store = jwks_store })
+expect(r, "verified", "", "another path JWKS URI on the same host")
+H.eq(r.agent, OTHER_JWKS)
 for _, spelled in ipairs({ JWKS .. "?v=7", JWKS .. "#k", "HTTPS://Agent.Example:443/keys/./x/../jwks.json",
     "https://agent.example/%6Beys/jwks.json", "https://agent.example:/keys/jwks.json" }) do
-    r = run(agent_case('"' .. spelled .. '";type=jwks_uri'), { store = typed })
+    r = run(agent_case('"' .. spelled .. '"'), { store = jwks_store })
     expect(r, "verified", "", spelled)
     H.eq(r.agent, JWKS, "one identifier for every spelling (5.5: query and fragment dropped; RFC 3986 6.2.2, 6.2.3)")
 end
-expect(run(agent_case('"' .. JWKS .. '";type=jwks_uri'), { store = { [CIMD] = typed[CIMD] } }), "unverified", "unknown-agent",
+expect(run(agent_case('"' .. JWKS .. '"'), { store = { [OTHER_JWKS] = jwks_store[OTHER_JWKS] } }), "unverified", "unknown-agent",
     "a key held for another URL never counts (5.4)")
-expect(run(agent_case('"https://agent.example"'), { store = typed }), "unverified", "unknown-agent",
-    "a directory member is the well-known URI, not a listed jwks_uri on the same origin")
-r = run(agent_case('"' .. H.AGENT_ID .. '";type=jwks_uri'))
-expect(r, "verified", "", "a jwks_uri naming a directory's well-known URI is that same identifier")
+expect(run(agent_case('"https://agent.example"'), { store = jwks_store }), "unverified", "unknown-agent",
+    "origin-only is JWKS-at-root (https://agent.example/), not a listed path on the same host")
+r = run(agent_case('"' .. H.AGENT_ID .. '"'))
+expect(r, "verified", "", "well-known full URL is a normal JWKS URI")
 H.eq(r.agent, H.AGENT_ID)
-for _, bad in ipairs({ '"https://user@agent.example/k";type=jwks_uri', '"https://agent.example/a b";type=cimd',
-    '"https://agent.example/a%zz";type=jwks_uri', '"https://agent.example:08443/k";type=jwks_uri' }) do
-    expect(run(agent_case(bad), { store = typed }), "unverified", "bad-agent-url", bad)
+for _, typed in ipairs({ '";type=jwks_uri', '";type=cimd', '";type=directory' }) do
+    expect(run(agent_case('"' .. JWKS .. typed), { store = jwks_store }), "unverified", "bad-agent-url",
+        "parameterized member ignored: " .. typed)
 end
-expect(run(agent_case('"http://agent.example/k";type=jwks_uri'), { store = typed }), "invalid", "agent-not-https")
+for _, bad in ipairs({ '"https://user@agent.example/k"', '"https://agent.example/a b"',
+    '"https://agent.example/a%zz"', '"https://agent.example:08443/k"' }) do
+    expect(run(agent_case(bad), { store = jwks_store }), "unverified", "bad-agent-url", bad)
+end
+expect(run(agent_case('"http://agent.example/k"'), { store = jwks_store }), "invalid", "agent-not-https")
 -- Normalizing runs on the client's value before any key is looked up, so it
 -- must be linear: 8 KiB of dot segments and percent-encodings.
 for _, path in ipairs({ ("/./.."):rep(1600), ("/a%41"):rep(1600), ("/a"):rep(4000) .. ("/.."):rep(2600) }) do
-    local req = agent_case('"https://agent.example' .. path .. '";type=jwks_uri')
+    local req = agent_case('"https://agent.example' .. path .. '"')
     local t2 = os.clock()
-    expect(run(req, { store = typed }), "unverified", "unknown-agent")
+    expect(run(req, { store = jwks_store }), "unverified", "unknown-agent")
     local s2 = os.clock() - t2
-    H.eq(s2 < 0.25, true, ("an %d-byte jwks_uri path took %.0f ms; budget 250 ms"):format(#path, s2 * 1000))
+    H.eq(s2 < 0.25, true, ("an %d-byte JWKS path took %.0f ms; budget 250 ms"):format(#path, s2 * 1000))
 end
-H.pass("jwks_uri and cimd members verify against their own identifiers, in every spelling of them; others ignored")
+H.pass("protocol-01: path JWKS URIs verify; parameterized members ignored; spellings collapse to one identifier")
 
 -- 14m. IPv6 literal agent hosts: RFC 5952 canonical text in the identifier.
 local V6 = "https://[2001:db8::1]:8443"
-local v6_store = { [V6 .. WK] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } }, [V6 .. "/k"] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } } }
+local v6_root, v6_wk, v6_path = V6 .. "/", V6 .. WK, V6 .. "/k"
+local v6_store = { [v6_root] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } },
+    [v6_wk] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } },
+    [v6_path] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } } }
 for _, member in ipairs({ V6, "https://[2001:db8:0:0:0:0:0:1]:8443", "https://[2001:0db8::0001]:8443/" }) do
     r = run(agent_case('"' .. member .. '"'), { store = v6_store })
     expect(r, "verified", "", member)
-    H.eq(r.agent, V6 .. WK)
+    H.eq(r.agent, v6_root, "origin-only / empty path → JWKS-at-root identifier")
 end
-expect(run(agent_case('"https://[2001:DB8::1]:8443"'), { store = v6_store }), "unverified", "bad-agent-url",
-    "an origin's serialization is lowercase (RFC 6454 6.2)")
-expect(run(agent_case('"https://[2001:db8::1]:443"'), { store = v6_store }), "unverified", "bad-agent-url",
-    "an explicit default port is not an origin's serialization")
+expect(run(agent_case('"https://[2001:DB8::1]:8443"'), { store = v6_store }), "verified", "",
+    "host case normalized in urlIdentifier")
+H.eq(run(agent_case('"https://[2001:DB8::1]:8443"'), { store = v6_store }).agent, v6_root)
+expect(run(agent_case('"https://[2001:db8::1]:443"'), { store = { ["https://[2001:db8::1]/"] = { [KEY.keyid] = { type = "ed25519", key = KEY.raw } } } }),
+    "verified", "", "explicit default port dropped")
 expect(run(agent_case('"https://[fe80::1%25en0]:8443"'), { store = v6_store }), "unverified", "bad-agent-url", "zone id")
-r = run(agent_case('"https://[2001:DB8:0::1]:8443/k";type=jwks_uri'), { store = v6_store })
-expect(r, "verified", "", "jwks_uri on an IPv6 literal: case-normalized")
-H.eq(r.agent, V6 .. "/k")
-H.pass("IPv6 literal hosts verify under one canonical identifier; uppercase, :443 and zone ids in an origin are ignored")
+r = run(agent_case('"https://[2001:DB8:0::1]:8443/k"'), { store = v6_store })
+expect(r, "verified", "", "path JWKS on an IPv6 literal: case-normalized")
+H.eq(r.agent, v6_path)
+H.pass("IPv6 literal hosts verify under one canonical identifier; zone ids refused")
 
 -- 14n. Draft Appendix B: the proof fact comes from the store, for the key
 -- that verified, and only while the proof's own expires has not passed.

@@ -33,7 +33,7 @@ Changes since v0.1.0-alpha.1:
 
 First public alpha, for testing on test sites. Not for production use.
 
-- Checks Web Bot Auth signatures (RFC 9421 HTTP Message Signatures, draft-ietf-webbotauth-httpsig-protocol-00) inside ModSecurity v3 and the OWASP CRS, in Lua 5.3 on the official CRS nginx image.
+- Checks Web Bot Auth signatures (RFC 9421 HTTP Message Signatures, draft-ietf-webbotauth-httpsig-protocol-01) inside ModSecurity v3 and the OWASP CRS, in Lua 5.3 on the official CRS nginx image.
 - Base image: `owasp/modsecurity-crs:4.30.0-nginx-202610051210` (ModSecurity 3.0.17, CRS 4.30.0).
 - Rule IDs 9534000-9534999. Every rule in `wba.conf` and `recipes.conf` carries the tag `web-bot-auth` and the version `web-bot-auth-plugin/0.1.0`, and each one that logs has a severity.
 - Setting `tx.web-bot-auth-plugin_enabled=0` turns the verifier off. The bot-list rules that `lists.ts` writes do not read it and keep running.

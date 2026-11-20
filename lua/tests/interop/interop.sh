@@ -8,7 +8,7 @@
 # Against a deployed WAF (yours):
 #   lua/tests/interop/interop.sh init /etc/wba-interop      # once: your interop key
 #   # serve /etc/wba-interop/interop.jwks.json from an https URL you control,
-#   # add that URL to agents.txt with type=jwks_uri, grant it nothing
+#   # add that URL to agents.txt as a bare JWKS URI, grant it nothing
 #   TARGET=https://www.example.com \
 #   INTEROP_KEY=/etc/wba-interop/interop-key.json \
 #   INTEROP_AGENT=https://www.example.com/.well-known/wba-interop.jwks.json \

@@ -147,7 +147,7 @@ for c in agent-pct-utf8 agent-pct-percent; do
   else echo "FAIL  PL3 + exclusion: $c (HTTP/2) -> HTTP $got (want 502)"; FAIL=1; fi
 done
 got=$(curl -s -o /dev/null --max-time 5 -w '%{http_code}' -H 'Host: example.com' -H 'X-WBA-Test: pct-not-excluded' \
-  -H 'X-Signature-Agent: agent1="https://jwks.example/caf%C3%A9/keys.json";type=jwks_uri' --http1.1 -k "https://127.0.0.1:$TLS_PORT/" || true)
+  -H 'X-Signature-Agent: agent1="https://jwks.example/caf%C3%A9/keys.json"' --http1.1 -k "https://127.0.0.1:$TLS_PORT/" || true)
 if [ "$got" = 403 ] && rule_matched pct-not-excluded 920272; then echo "PASS  PL3 + exclusion: the same value in X-Signature-Agent -> refused by 920272"
 else echo "FAIL  PL3 + exclusion: the same value in X-Signature-Agent -> HTTP $got (want 403 from 920272)"; FAIL=1; fi
 

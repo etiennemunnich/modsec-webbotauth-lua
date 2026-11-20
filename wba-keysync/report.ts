@@ -79,9 +79,9 @@ export function traffic(text: string): Traffic {
   return t;
 }
 
-/** The identifier a bot's verified requests are logged under (its directory or JWK Set URL). */
+/** The identifier a bot's verified requests are logged under (its JWKS URL). */
 export const agentId = (b: Bot) =>
-  b.wba ? (b.wba_type === "jwks_uri" ? urlIdentifier(b.wba) : directoryIdentifier(b.wba)) ?? undefined : undefined;
+  b.wba ? (directoryIdentifier(b.wba) ?? urlIdentifier(b.wba)) ?? undefined : undefined;
 
 /**
  * Text from a bots file or the network, made inert in Markdown: control
@@ -219,7 +219,7 @@ export function catalogue(evs: Evidence[], findings: Finding[], at = new Date())
       for (const u of asList(b.docs)) out.push(`  - documentation ${link(u)}: ${said("docs", u)}`);
       for (const u of asList(b.ips)) out.push(`  - IP list ${link(u)}: ${said("ips", u)}`);
       if (b.wba) {
-        const url = b.wba_type === "jwks_uri" ? b.wba : directoryIdentifier(b.wba) ?? b.wba;
+        const url = directoryIdentifier(b.wba) ?? b.wba;
         out.push(`  - signing keys ${link(url)}: ${said("wba", url)}`);
       }
       if (asList(b.rdns).length) out.push(`  - reverse DNS ${asList(b.rdns).map((r) => text(String(r))).join(", ")}: documented; checking needs a forward-confirmed DNS lookup, which this project does not do yet (planned: offline)`);

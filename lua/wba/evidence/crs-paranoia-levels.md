@@ -122,7 +122,7 @@ GET / HTTP/2.0
 x-wba-test: agent-jwks-h2
 user-agent: wba-live-test
 accept: */*
-signature-agent: agent1="https://jwks.example/keys.json?v=2";type=jwks_uri
+signature-agent: agent1="https://jwks.example/keys.json?v=2"
 signature-input: sig1=("@authority" "signature-agent";key="agent1");created=1791707821;expires=1791708426;keyid="L9YpFAZI4-qujWYA9tx5ln8RCt1yL9ok_mtX0VxPso8";alg="ed25519";tag="web-bot-auth"
 signature: sig1=:wxZOB7NkpVa09JJId0H2knGSkszGaSCKo2jtFMRGK8XtkDDiUnfSY1jkWM7NST44Wrg6o1PL6iApLXuHOt37Bw==:
 host: example.com

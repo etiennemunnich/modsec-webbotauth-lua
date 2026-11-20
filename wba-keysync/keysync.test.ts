@@ -291,8 +291,8 @@ test("sync: last-good kept on failure, evicted when a resolved directory drops t
   ];
   const seen: RequestInit[] = [];
   const r = await sync(
-    ["https://down.example", "https://rotated.example", "https://new.example",
-     "https://new.example:443/", "http://plain.example"],
+    [ID("down.example"), ID("rotated.example"), ID("new.example"),
+     ID("new.example") + "?v=2", "http://plain.example"],
     prev,
     { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({
       [ID("down.example")]: () => new Response("", { status: 503 }),
@@ -301,8 +301,8 @@ test("sync: last-good kept on failure, evicted when a resolved directory drops t
     }, seen) },
   );
   assert.deepEqual(r.entries.map((e) => e.identifier), [ID("down.example"), ID("new.example")]);
-  assert.deepEqual(r.failures.map((f) => f.origin).sort(), ["http://plain.example", "https://down.example"]);
-  assert.equal(seen.length, 3, "two spellings of new.example fetched once");
+  assert.deepEqual(r.failures.map((f) => f.origin).sort(), ["http://plain.example", ID("down.example")]);
+  assert.equal(seen.length, 3, "two query spellings of new.example fetched once");
 });
 
 test("format() emits the exact bytes of the shared fixture that keys.lua parses", () => {
@@ -466,70 +466,70 @@ test("forbiddenAddress: private, loopback, link-local and their mapped forms (dr
 test("sync: a name resolving to a private address is never fetched, and keeps its last-good keys", async () => {
   const seen: RequestInit[] = [];
   const prev: StoreEntry[] = [{ identifier: ID("a.example"), keyid: KID_KEY, type: "ed25519", publicKeyHex: HEX_KEY }];
-  const r = await sync(["https://a.example", "https://localhost"], prev, {
+  const r = await sync([ID("a.example"), "https://localhost/"], prev, {
     now: NOW, resolve: async (host) => (host === "localhost" ? ["127.0.0.1"] : ["93.184.215.14", "10.0.0.5"]),
     fetchImpl: fakeFetch({}, seen) });
   assert.equal(seen.length, 0, "no fetch");
   assert.deepEqual(r.entries.map((e) => e.identifier), [ID("a.example")], "last-good kept (draft 6.10)");
-  assert.match(r.failures.find((f) => f.origin === "https://a.example")!.error, /10\.0\.0\.5, a private/);
-  assert.match(r.failures.find((f) => f.origin === "https://localhost")!.error, /127\.0\.0\.1/);
+  assert.match(r.failures.find((f) => f.origin === ID("a.example"))!.error, /10\.0\.0\.5, a private/);
+  assert.match(r.failures.find((f) => f.origin === "https://localhost/")!.error, /127\.0\.0\.1/);
 });
 
-const SRC_A = `directory ${ID("a.example")}`; // the cache records how a directory was resolved
+const SRC_A = ID("a.example"); // the cache records the fetch URL
 
 test("sync: fresh directories are not fetched; stale ones are revalidated; failures back off (draft 5.5.2, C.4, C.5)", async () => {
   const held: StoreEntry[] = [{ identifier: ID("a.example"), keyid: KID_KEY, type: "ed25519", publicKeyHex: HEX_KEY }];
   const key = { kty: "OKP", crv: "Ed25519", x: X_KEY };
   // 1. First fetch: 200 with max-age and an ETag.
   const seen: RequestInit[] = [];
-  let r = await sync(["https://a.example"], [], { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({
+  let r = await sync([ID("a.example")], [], { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({
     [ID("a.example")]: () => new Response(JSON.stringify({ keys: [key] }),
       { status: 200, headers: { "content-type": MEDIA_TYPE, "cache-control": "max-age=600", etag: '"v1"' } }),
   }, seen) });
   assert.deepEqual(r.cache[ID("a.example")], { freshUntil: NOW + 600, keys: 1, source: SRC_A, etag: '"v1"' });
   const cache: Cache = r.cache;
   // 2. Still fresh: no request at all.
-  r = await sync(["https://a.example"], held, { now: NOW + 599, cache, resolve: publicDns, fetchImpl: fakeFetch({}, seen) });
+  r = await sync([ID("a.example")], held, { now: NOW + 599, cache, resolve: publicDns, fetchImpl: fakeFetch({}, seen) });
   assert.equal(seen.length, 1, "no request while fresh");
-  assert.deepEqual(r.fresh, ["https://a.example"]);
+  assert.deepEqual(r.fresh, [ID("a.example")]);
   assert.equal(r.entries.length, 1);
   // 3. Stale: revalidated with If-None-Match; 304 keeps the keys and renews freshness.
-  r = await sync(["https://a.example"], held, { now: NOW + 600, cache, resolve: publicDns, fetchImpl: fakeFetch({
+  r = await sync([ID("a.example")], held, { now: NOW + 600, cache, resolve: publicDns, fetchImpl: fakeFetch({
     [ID("a.example")]: () => new Response(null, { status: 304, headers: { "cache-control": "max-age=60" } }),
   }, seen) });
   assert.equal((seen[1].headers as Record<string, string>)["if-none-match"], '"v1"');
   assert.deepEqual(r.entries.map((e) => e.keyid), [KID_KEY]);
   assert.deepEqual(r.cache[ID("a.example")], { freshUntil: NOW + 660, keys: 1, source: SRC_A, etag: '"v1"' });
   // 4. A store that no longer matches the cache is not trusted: plain refetch, no validators.
-  r = await sync(["https://a.example"], [], { now: NOW + 10, cache, resolve: publicDns, fetchImpl: fakeFetch({
+  r = await sync([ID("a.example")], [], { now: NOW + 10, cache, resolve: publicDns, fetchImpl: fakeFetch({
     [ID("a.example")]: () => new Response(JSON.stringify({ keys: [] }), { status: 200, headers: { "content-type": MEDIA_TYPE } }),
   }, seen) });
   assert.equal((seen[2].headers as Record<string, string>)["if-none-match"], undefined);
   assert.deepEqual(r.entries, [], "the directory now lists no key: removed (draft 6.10, evidence)");
   // 5. Failure: last-good kept, back off; Retry-After wins.
-  r = await sync(["https://a.example"], held, { now: NOW + 700, cache, resolve: publicDns, fetchImpl: fakeFetch({
+  r = await sync([ID("a.example")], held, { now: NOW + 700, cache, resolve: publicDns, fetchImpl: fakeFetch({
     [ID("a.example")]: () => new Response("", { status: 503, headers: { "retry-after": "120" } }),
   }, seen) });
   assert.equal(r.entries.length, 1, "an outage evicts nothing (draft 6.10)");
   assert.deepEqual(r.cache[ID("a.example")], { freshUntil: 0, keys: 1, failures: 1, retryAt: NOW + 820, source: SRC_A, etag: '"v1"' });
   const before = seen.length;
-  r = await sync(["https://a.example"], held, { now: NOW + 800, cache: r.cache, resolve: publicDns, fetchImpl: fakeFetch({}, seen) });
+  r = await sync([ID("a.example")], held, { now: NOW + 800, cache: r.cache, resolve: publicDns, fetchImpl: fakeFetch({}, seen) });
   assert.equal(seen.length, before, "no retry before retryAt");
   assert.equal(r.failures.length, 1);
-  r = await sync(["https://a.example"], held, { now: NOW + 900, cache: { [ID("a.example")]: { freshUntil: 0, keys: 1, failures: 3, retryAt: 0 } },
+  r = await sync([ID("a.example")], held, { now: NOW + 900, cache: { [ID("a.example")]: { freshUntil: 0, keys: 1, failures: 3, retryAt: 0 } },
     resolve: publicDns, fetchImpl: fakeFetch({ [ID("a.example")]: () => new Response("", { status: 500 }) }, seen) });
   assert.equal(r.cache[ID("a.example")].retryAt, NOW + 900 + 240, "30 s doubling: the 4th failure waits 240 s");
 });
 
 test("sync: an origin that resolves to no usable key is reported (cli.ts exits 2)", async () => {
-  const r = await sync(["https://jose.example", "https://good.example"], [], { now: NOW, resolve: publicDns,
+  const r = await sync([ID("jose.example"), ID("good.example")], [], { now: NOW, resolve: publicDns,
     fetchImpl: fakeFetch({
       // Shaped like a live directory seen 2026-10-02 (agent.bot.goog): JOSE alg, now accepted,
       // and a short kid on every key, which the well-known URI forbids (draft 5.5 MUST).
       [ID("jose.example")]: dir({ keys: [{ kty: "OKP", crv: "Ed25519", x: X_KEY, alg: "EdDSA", kid: "mhxuPw" }] }),
       [ID("good.example")]: dir({ keys: [{ kty: "OKP", crv: "Ed25519", x: X_KEY }] }),
     }) });
-  assert.deepEqual(r.empty, ["https://jose.example"]);
+  assert.deepEqual(r.empty, [ID("jose.example")]);
   assert.deepEqual(r.failures, [], "it resolved: an empty directory is not a fetch failure");
   assert.deepEqual(r.entries.map((e) => e.identifier), [ID("good.example")]);
 });
@@ -577,40 +577,38 @@ const json = (body: unknown, headers: Record<string, string> = {}, type = "appli
   () => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": type, ...headers } });
 const OKP = { kty: "OKP", crv: "Ed25519", x: X_KEY };
 
-test("parseAgent: agents.txt lines, a type per line (draft 5.5), CIMD 3's URL rules", () => {
-  assert.deepEqual(parseAgent("https://a.example"), { line: "https://a.example", type: "directory", url: ID("a.example"), id: ID("a.example") });
-  assert.deepEqual(parseAgent("https://a.example type=directory"),
-    { line: "https://a.example type=directory", type: "directory", url: ID("a.example"), id: ID("a.example") });
-  assert.deepEqual(parseAgent("https://a.example/jwks.json?v=2 type=jwks_uri"),
-    { line: "https://a.example/jwks.json?v=2 type=jwks_uri", type: "jwks_uri", url: "https://a.example/jwks.json?v=2", id: "https://a.example/jwks.json" });
-  assert.deepEqual(parseAgent("https://a.example/card type=cimd"),
-    { line: "https://a.example/card type=cimd", type: "cimd", url: "https://a.example/card", id: "https://a.example/card" });
-  for (const bad of ["https://a.example type=x509", "https://a.example/jwks.json type=jwks_uri extra", "https://a.example/jwks.json",
-    "http://a.example/k type=jwks_uri", "https://u@a.example/k type=jwks_uri", "https://a.example/a%zz type=jwks_uri",
-    "https://a.example type=cimd", "https://a.example/a/../card type=cimd", "https://a.example/%2E%2e/card type=cimd",
-    "https://a.example/card#x type=cimd"]) {
+test("parseAgent: agents.txt lines are bare HTTPS JWKS URLs (protocol-01)", () => {
+  assert.deepEqual(parseAgent("https://a.example/jwks.json?v=2"),
+    { line: "https://a.example/jwks.json?v=2", url: "https://a.example/jwks.json?v=2", id: "https://a.example/jwks.json" });
+  assert.deepEqual(parseAgent(ID("a.example")),
+    { line: ID("a.example"), url: ID("a.example"), id: ID("a.example") });
+  assert.deepEqual(parseAgent("https://a.example"),
+    { line: "https://a.example", url: "https://a.example", id: "https://a.example/" },
+    "origin-only is JWKS-at-root (no well-known rewrite in parseAgent)");
+  for (const bad of ["https://a.example type=jwks_uri", "https://a.example type=directory", "https://a.example/jwks.json extra",
+    "http://a.example/k", "https://u@a.example/k", "https://a.example/a%zz", ""]) {
     assert.equal(typeof parseAgent(bad), "string", bad);
   }
 });
 
-test("sync: type=jwks_uri is fetched as written and identified without its query; its kid is a label (draft 5.5)", async () => {
+test("sync: is fetched as written and identified without its query; its kid is a label (draft 5.5)", async () => {
   const urls: string[] = [], seen: RequestInit[] = [];
-  const r = await sync(["https://a.example/jwks.json?v=2 type=jwks_uri", "https://a.example/jwks.json?v=3 type=jwks_uri"], [], {
+  const r = await sync(["https://a.example/jwks.json?v=2", "https://a.example/jwks.json?v=3"], [], {
     now: NOW, resolve: publicDns, fetchImpl: recFetch({
       "https://a.example/jwks.json?v=2": json({ keys: [{ ...OKP, kid: "2026-10-key-1", use: "sig" }] }, {}, "application/jwk-set+json"),
     }, urls, seen) });
   assert.deepEqual(urls, ["https://a.example/jwks.json?v=2"], "one fetch per identifier, the first line's URL as written");
   assert.deepEqual(r.entries, [{ identifier: "https://a.example/jwks.json", keyid: KID_KEY, type: "ed25519", publicKeyHex: HEX_KEY }],
     "kept under its computed thumbprint, whatever its kid; no proof (Appendix B is for directories)");
-  assert.deepEqual(r.warnings, ["https://a.example/jwks.json?v=3 type=jwks_uri: the same identifier as "
-    + "https://a.example/jwks.json?v=2 type=jwks_uri (draft 5.5); only that line is fetched"]);
+  assert.deepEqual(r.warnings, ["https://a.example/jwks.json?v=3: the same identifier as "
+    + "https://a.example/jwks.json?v=2 (draft 5.5); only that line is fetched"]);
   assert.deepEqual(r.proofs, []);
   const h = seen[0].headers as Record<string, string>;
   assert.equal(h.accept, "application/jwk-set+json, application/json");
   assert.equal(h["accept-encoding"], "identity");
   assert.equal(seen[0].redirect, "manual");
 
-  const one = (route: () => Response, line = "https://b.example/k type=jwks_uri", url = "https://b.example/k") =>
+  const one = (route: () => Response, line = "https://b.example/k", url = "https://b.example/k") =>
     sync([line], [], { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({ [url]: route }) });
   // Off the well-known URI the draft sets no media type (5.5, 5.5.1): any is read, and the body
   // must still be a JWK Set.
@@ -624,17 +622,17 @@ test("sync: type=jwks_uri is fetched as written and identified without its query
   assert.match((await one(() => new Response(null, { status: 302, headers: { location: "https://b.example/k2" } }))).failures[0].error,
     /HTTP 302/, "5.5: each fetch MUST be 200, no redirect followed");
   // At the well-known URI the directory's rules hold whatever the type: its media type, and kid = thumbprint (5.5, 5.5.1).
-  const wk = await one(dir({ keys: [{ ...OKP, kid: "label" }] }), `${ID("b.example")} type=jwks_uri`, ID("b.example"));
-  assert.deepEqual([wk.entries, wk.empty], [[], [`${ID("b.example")} type=jwks_uri`]]);
+  const wk = await one(dir({ keys: [{ ...OKP, kid: "label" }] }), `${ID("b.example")}`, ID("b.example"));
+  assert.deepEqual([wk.entries, wk.empty], [[], [`${ID("b.example")}`]]);
   assert.match(wk.warnings[0], /is not its thumbprint/);
-  assert.match((await one(json({ keys: [OKP] }), `${ID("b.example")} type=jwks_uri`, ID("b.example"))).failures[0].error,
+  assert.match((await one(json({ keys: [OKP] }), `${ID("b.example")}`, ID("b.example"))).failures[0].error,
     /expected application\/http-message-signatures-directory\+json/);
 });
 
 test("sync: every fetch is guarded (draft 6.7): IP literals checked as written, never resolved; names resolved first", async () => {
   const urls: string[] = [], resolved: string[] = [];
-  const r = await sync(["https://[::1]", "https://[fe80::1]:8443", "https://[::ffff:10.0.0.1]", "https://[fd12::1]/k type=jwks_uri",
-    "https://0x7f.1", "https://169.254.169.254/latest type=jwks_uri", "https://internal.example/k type=jwks_uri"], [], {
+  const r = await sync(["https://[::1]", "https://[fe80::1]:8443", "https://[::ffff:10.0.0.1]", "https://[fd12::1]/k",
+    "https://0x7f.1", "https://169.254.169.254/latest", "https://internal.example/k"], [], {
     now: NOW, resolve: async (h) => { resolved.push(h); return h === "internal.example" ? ["10.1.2.3"] : ["93.184.215.14"]; },
     fetchImpl: recFetch({}, urls) });
   assert.deepEqual(urls, [], "nothing fetched");
@@ -642,54 +640,15 @@ test("sync: every fetch is guarded (draft 6.7): IP literals checked as written, 
   assert.equal(r.failures.length, 7);
   for (const f of r.failures) assert.match(f.error, /a private, loopback or link-local address \(draft 6\.7\)/, f.origin);
   // A public IPv6 literal: one canonical identifier (RFC 5952), fetched without DNS.
-  const v6 = "https://[2001:db8::1]:8443" + WELL_KNOWN;
-  const ok = await sync(["https://[2001:0db8:0:0::1]:8443"], [], { now: NOW, resolve: async () => assert.fail("resolved a literal"),
-    fetchImpl: recFetch({ [v6]: dir({ keys: [OKP] }) }, urls) });
-  assert.deepEqual([urls, ok.entries.map((e) => e.identifier)], [[v6], [v6]]);
+  const v6line = "https://[2001:db8::1]:8443/";
+  const ok = await sync([v6line], [], { now: NOW, resolve: async () => assert.fail("resolved a literal"),
+    fetchImpl: recFetch({ [v6line]: json({ keys: [OKP] }) }, urls) });
+  assert.deepEqual([urls, ok.entries.map((e) => e.identifier)], [[v6line], [v6line]]);
 });
 
-test("sync: type=cimd: client_id is the URL fetched, then jwks or jwks_uri under the same rules (draft 5.5; CIMD 4, 4.1)", async () => {
-  const CARD = "https://a.example/card", HOP = "https://keys.example/jwks.json";
-  const key = { ...OKP, kid: "client-key-1" };
-  let r = await sync([`${CARD} type=cimd`], [], { now: NOW, resolve: publicDns,
-    fetchImpl: fakeFetch({ [CARD]: json({ client_id: CARD, jwks: { keys: [key] } }) }) });
-  assert.deepEqual(r.entries, [{ identifier: CARD, keyid: KID_KEY, type: "ed25519", publicKeyHex: HEX_KEY }], "inline jwks; kid a label");
-  const urls: string[] = [], resolved: string[] = [];
-  r = await sync([`${CARD} type=cimd`], [], { now: NOW, resolve: async (h) => { resolved.push(h); return ["93.184.215.14"]; },
-    fetchImpl: recFetch({
-      [CARD]: json({ client_id: CARD, jwks_uri: HOP, token_endpoint_auth_method: "private_key_jwt" }, { "cache-control": "max-age=600" }),
-      [HOP]: json({ keys: [key] }, { "cache-control": "max-age=60" }, "application/jwk-set+json"),
-    }, urls) });
-  assert.deepEqual(urls, [CARD, HOP]);
-  assert.deepEqual(resolved, ["a.example", "keys.example"], "the jwks_uri hop is guarded too");
-  assert.deepEqual(r.entries.map((e) => e.identifier), [CARD], "identified by the CIMD URL, not the hop");
-  assert.equal(r.cache[CARD].freshUntil, NOW + 60, "fresh only while both responses are");
-  assert.equal(r.cache[CARD].etag, undefined, "never revalidated conditionally: two responses");
 
-  const held: StoreEntry[] = [{ identifier: CARD, keyid: KID_KEY, type: "ed25519", publicKeyHex: HEX_KEY }];
-  for (const [doc, why] of [
-    [{ client_id: "https://a.example/other", jwks: { keys: [key] } }, /CIMD 4: client_id/],
-    [{ jwks: { keys: [key] } }, /CIMD 4: client_id null/],
-    [{ client_id: CARD, jwks: { keys: [key] }, jwks_uri: HOP }, /MUST NOT both be present/],
-    [{ client_id: CARD }, /no jwks or jwks_uri/],
-    [{ client_id: CARD, client_secret: "s3cret", jwks: { keys: [key] } }, /CIMD 4\.1/],
-    [{ client_id: CARD, token_endpoint_auth_method: "client_secret_basic", jwks: { keys: [key] } }, /CIMD 4\.1/],
-    [{ client_id: CARD, jwks_uri: "http://keys.example/jwks.json" }, /not an https URL/],
-    [{ client_id: CARD, jwks_uri: "https://keys.internal/jwks.json" }, /resolves to 192\.168\.1\.9/],
-    [{ client_id: CARD, jwks_uri: "https://[::1]/jwks.json" }, /\[::1\] is a private/],
-    [{ client_id: CARD, jwks_uri: "https://keys.example/moved" }, /HTTP 301/],
-    [{ client_id: CARD, jwks: { keys: "none" } }, /not a JWK Set/],
-    [[CARD], /not a JSON object/],
-  ] as [unknown, RegExp][]) {
-    const u: string[] = [];
-    const r2 = await sync([`${CARD} type=cimd`], held, { now: NOW, resolve: async (h) => (h === "keys.internal" ? ["192.168.1.9"] : ["93.184.215.14"]),
-      fetchImpl: recFetch({ [CARD]: json(doc),
-        "https://keys.example/moved": () => new Response(null, { status: 301, headers: { location: HOP } }), [HOP]: json({ keys: [key] }) }, u) });
-    assert.match(r2.failures[0]?.error ?? "(no failure)", why, JSON.stringify(doc));
-    assert.deepEqual(r2.entries, held, "a CIMD that fails to resolve evicts nothing (draft 6.10)");
-    assert.ok(!u.includes(HOP), "no redirect followed, nothing fetched past a refusal");
-  }
-});
+test.skip("sync:: client_id is the URL fetched, then jwks or jwks_uri under the same rules (draft 5.5; CIMD 4, 4.1)… (CIMD discovery removed under protocol-01)");
+
 
 /** A directory response signed by a fresh key over a hand-written Appendix B base. */
 async function signedDirectory(host: string, created: number, expires: number) {
@@ -710,33 +669,35 @@ async function signedDirectory(host: string, created: number, expires: number) {
 test("sync: Appendix B proofs are recorded per key, refreshed before they expire, and never renewed by a 304", async () => {
   const d = await signedDirectory("a.example", NOW - 10, NOW + 3600);
   const seen: RequestInit[] = [];
-  let r = await sync(["https://a.example"], [], { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({ [ID("a.example")]: d.response }, seen) });
+  let r = await sync([ID("a.example")], [], { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({ [ID("a.example")]: d.response }, seen) });
   assert.deepEqual(r.entries.map((e) => [e.keyid, e.proof, e.proofExpires]), [[d.kid, "valid", NOW + 3600]]);
-  assert.deepEqual(r.proofs, [{ origin: "https://a.example", identifier: ID("a.example"), summary: "valid", valid: 1, keys: 1, notes: [] }]);
+  assert.deepEqual(r.proofs, [{ origin: ID("a.example"), identifier: ID("a.example"), summary: "valid", valid: 1, keys: 1, notes: [] }]);
   assert.equal(r.cache[ID("a.example")].freshUntil, NOW + 3600, "max-age is a day; the proof expires in an hour");
   assert.match(format(r.entries, new Date(0)), new RegExp(`\\tvalid\\t${NOW + 3600}\\n$`));
   // Stale at the proof's expiry: fetched again, unconditionally (a 304 carries no new proof).
-  r = await sync(["https://a.example"], r.entries, { now: NOW + 3600, cache: r.cache, resolve: publicDns,
+  r = await sync([ID("a.example")], r.entries, { now: NOW + 3600, cache: r.cache, resolve: publicDns,
     fetchImpl: fakeFetch({ [ID("a.example")]: d.response }, seen) });
   assert.equal(seen.length, 2);
   assert.equal((seen[1].headers as Record<string, string>)["if-none-match"], undefined);
   assert.equal(r.entries[0].proof, "invalid", "that response's own signature has now expired (5.5.3)");
-  // The same signed response as a jwks_uri: Appendix B is not evaluated (it applies to the directory type).
-  r = await sync([`${ID("a.example")} type=jwks_uri`], [], { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({ [ID("a.example")]: d.response }) });
+  // Off the well-known path, Appendix B is not evaluated (it applies when the
+  // JWKS URL is the registered well-known directory URI).
+  r = await sync(["https://a.example/jwks.json"], [], { now: NOW, resolve: publicDns,
+    fetchImpl: fakeFetch({ "https://a.example/jwks.json": d.response }) });
   assert.deepEqual([r.entries[0].proof, r.proofs], [undefined, []]);
   // Judged when the response arrives: a created signed during a slow fetch is
   // not "in the future" (100 s, beyond the clock skew, so only the receipt time
   // can make it valid).
   const late = await signedDirectory("a.example", NOW + 100, NOW + 600);
-  r = await sync(["https://a.example"], [], { now: NOW, clock: () => NOW + 100, resolve: publicDns,
+  r = await sync([ID("a.example")], [], { now: NOW, clock: () => NOW + 100, resolve: publicDns,
     fetchImpl: fakeFetch({ [ID("a.example")]: late.response }) });
   assert.equal(r.entries[0].proof, "valid");
-  r = await sync(["https://a.example"], [], { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({ [ID("a.example")]: late.response }) });
+  r = await sync([ID("a.example")], [], { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({ [ID("a.example")]: late.response }) });
   assert.equal(r.entries[0].proof, "invalid", "created beyond the clock skew after the time of receipt: B.1 MUST reject");
   // A clock a little behind the directory's: within the skew (proof.ts PROOF_CLOCK_SKEW), so a
   // directory that stamps each response with its current second still proves (OpenAI's does).
   const close = await signedDirectory("a.example", NOW + 2, NOW + 600);
-  r = await sync(["https://a.example"], [], { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({ [ID("a.example")]: close.response }) });
+  r = await sync([ID("a.example")], [], { now: NOW, resolve: publicDns, fetchImpl: fakeFetch({ [ID("a.example")]: close.response }) });
   assert.equal(r.entries[0].proof, "valid", "2 s ahead: within the clock skew");
 });
 
@@ -753,7 +714,7 @@ test("sync: an ECDSA P-256 directory's proof is checked with its own algorithm, 
     const sig = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, kp.privateKey, new TextEncoder().encode(base)));
     const headers = { "content-type": MEDIA_TYPE, "content-digest": digest, "signature-input": `b=${inner}`,
       signature: `b=:${btoa(String.fromCharCode(...sig))}:` };
-    return sync(["https://a.example"], [], { now: NOW, resolve: publicDns,
+    return sync([ID("a.example")], [], { now: NOW, resolve: publicDns,
       fetchImpl: fakeFetch({ [ID("a.example")]: () => new Response(body, { status: 200, headers }) }) });
   };
   let r = await directory("ecdsa-p256-sha256", "ecdsa-p256-sha256");
@@ -765,15 +726,16 @@ test("sync: an ECDSA P-256 directory's proof is checked with its own algorithm, 
 test("sync: --allow-private-origin excepts exactly the origins named, and reports each fetch (draft 6.7)", async () => {
   const seen: RequestInit[] = [];
   const key = dir({ keys: [{ kty: "OKP", crv: "Ed25519", x: X_KEY }] });
-  const r = await sync(["https://localhost:8443", "https://localhost", "https://inside.example"], [], {
+  const wk = `https://localhost:8443${WELL_KNOWN}`;
+  const r = await sync([wk, "https://localhost/", "https://inside.example/"], [], {
     now: NOW, resolve: async (host) => (host === "localhost" ? ["127.0.0.1"] : ["10.0.0.5"]),
     allowPrivate: [allowedOrigin("https://localhost:8443")!],
-    fetchImpl: fakeFetch({ [`https://localhost:8443${WELL_KNOWN}`]: key }, seen) });
-  assert.deepEqual(r.entries.map((e) => e.identifier), [`https://localhost:8443${WELL_KNOWN}`]);
+    fetchImpl: fakeFetch({ [wk]: key }, seen) });
+  assert.deepEqual(r.entries.map((e) => e.identifier), [wk]);
   assert.equal(seen.length, 1, "only the named origin was fetched");
-  assert.match(r.failures.find((f) => f.origin === "https://localhost")!.error, /127\.0\.0\.1, a private/, "another port of the same host is not excepted");
-  assert.match(r.failures.find((f) => f.origin === "https://inside.example")!.error, /10\.0\.0\.5, a private/);
-  assert.deepEqual(r.warnings, ["https://localhost:8443: https://localhost:8443 fetched without the private-address check (--allow-private-origin)"]);
+  assert.match(r.failures.find((f) => f.origin === "https://localhost/")!.error, /127\.0\.0\.1, a private/, "another port of the same host is not excepted");
+  assert.match(r.failures.find((f) => f.origin === "https://inside.example/")!.error, /10\.0\.0\.5, a private/);
+  assert.deepEqual(r.warnings, [`${wk}: https://localhost:8443 fetched without the private-address check (--allow-private-origin)`]);
 });
 
 test("allowedOrigin: an https origin as agents.txt writes one, normalised; nothing else", () => {
@@ -787,36 +749,15 @@ test("allowedOrigin: an https origin as agents.txt writes one, normalised; nothi
 
 // --- Review 2026-10-14: the private-address exception's scope, DNS time limit, output, config errors ---
 
-test("--allow-private-origin covers only the URL an agents.txt line names, never the jwks_uri a CIMD document names", async () => {
-  const PRIV = "https://localhost:8443", CARD = `${PRIV}/card`, HOP = `${PRIV}/jwks.json`, PUB = "https://card.example/card";
-  const resolve = async (h: string) => (h === "localhost" ? ["127.0.0.1"] : ["93.184.215.14"]);
-  const allowPrivate = [allowedOrigin(PRIV)!];
-  const keys = json({ keys: [OKP] }, {}, "application/jwk-set+json");
-  // The excepted origin's own CIMD document is fetched; the jwks_uri it names, on that same origin, is still checked.
-  let urls: string[] = [];
-  let r = await sync([`${CARD} type=cimd`], [], { now: NOW, resolve, allowPrivate,
-    fetchImpl: recFetch({ [CARD]: json({ client_id: CARD, jwks_uri: HOP }), [HOP]: keys }, urls) });
-  assert.deepEqual(urls, [CARD], "the hop was never fetched");
-  assert.match(r.failures[0]?.error ?? "(no failure)", /^localhost resolves to 127\.0\.0\.1, a private, loopback or link-local address/);
-  assert.deepEqual(r.warnings, [`${CARD} type=cimd: ${PRIV} fetched without the private-address check (--allow-private-origin)`]);
-  // A public CIMD whose server points its jwks_uri at the excepted origin: refused, nothing fetched there.
-  urls = [];
-  r = await sync([`${PUB} type=cimd`], [], { now: NOW, resolve, allowPrivate,
-    fetchImpl: recFetch({ [PUB]: json({ client_id: PUB, jwks_uri: HOP }), [HOP]: keys }, urls) });
-  assert.deepEqual(urls, [PUB]);
-  assert.match(r.failures[0]?.error ?? "(no failure)", /127\.0\.0\.1, a private/);
-  assert.deepEqual(r.warnings, [], "no fetch went unchecked");
-  // The same JWK Set, listed in agents.txt itself, is excepted.
-  urls = [];
-  r = await sync([`${HOP} type=jwks_uri`], [], { now: NOW, resolve, allowPrivate, fetchImpl: recFetch({ [HOP]: keys }, urls) });
-  assert.deepEqual([urls, r.failures, r.entries.map((e) => e.identifier)], [[HOP], [], [HOP]]);
-});
+
+test.skip("--allow-private-origin covers only the URL an agents.txt line names, never the jwks_uri a CIMD document names… (CIMD discovery removed under protocol-01)");
+
 
 test("sync: a DNS lookup that never answers fails within --timeout-ms, as a fetch does, and keeps the last-good keys", async () => {
   const urls: string[] = [];
   const held: StoreEntry[] = [{ identifier: ID("a.example"), keyid: KID_KEY, type: "ed25519", publicKeyHex: HEX_KEY }];
   const t0 = Date.now();
-  const r = await sync(["https://a.example"], held, { now: NOW, limits: { ...DEFAULT_LIMITS, timeoutMs: 50 },
+  const r = await sync([ID("a.example")], held, { now: NOW, limits: { ...DEFAULT_LIMITS, timeoutMs: 50 },
     resolve: () => new Promise<string[]>(() => {}), fetchImpl: recFetch({}, urls) });
   assert.ok(Date.now() - t0 < 2000, `took ${Date.now() - t0} ms`);
   assert.deepEqual(urls, [], "nothing fetched");
@@ -845,12 +786,12 @@ test("withDeadline: the timer is cleared once the lookup answers, so a run exits
 test("a body that is not JSON fails with a fixed message, so none of its bytes reach the output (Node quotes up to ten, Bun one)", async () => {
   const evil = "\u001b[2J\u001b]0;owned\u0007\u009b31m" + "x".repeat(20);
   const bytes = new TextEncoder().encode(evil).length;
-  for (const [line, url, type] of [["https://a.example", ID("a.example"), MEDIA_TYPE], ["https://b.example/k type=jwks_uri", "https://b.example/k", "application/json"]]) {
+  for (const [line, url, type] of [[ID("a.example"), ID("a.example"), MEDIA_TYPE], ["https://b.example/k", "https://b.example/k", "application/json"]]) {
     const r = await sync([line], [], { now: NOW, resolve: publicDns,
       fetchImpl: fakeFetch({ [url]: () => new Response(evil, { status: 200, headers: { "content-type": type } }) }) });
     assert.equal(r.failures[0]?.error, `the body (${bytes} bytes) is not UTF-8 JSON`, line);
   }
-  const r = await sync(["https://b.example/k type=jwks_uri"], [], { now: NOW, resolve: publicDns,
+  const r = await sync(["https://b.example/k"], [], { now: NOW, resolve: publicDns,
     fetchImpl: fakeFetch({ "https://b.example/k": () => new Response(new Uint8Array([0x7b, 0xff, 0x7d]), { status: 200 }) }) });
   assert.equal(r.failures[0]?.error, "the body (3 bytes) is not UTF-8 JSON");
 });
@@ -868,9 +809,9 @@ function cliDir(agents: string): string {
 }
 
 test("readAgents: agent lines, and each line key sync cannot use by its line number", () => {
-  assert.deepEqual(readAgents("# ours\r\nhttps://a.example\r\n\n  https://b.example/k type=jwks_uri  \nhttps://c.example type=x509\n"), {
-    agents: ["https://a.example", "https://b.example/k type=jwks_uri"],
-    errors: ['line 5: "https://c.example type=x509": expected <https URL> [type=directory|jwks_uri|cimd]'],
+  assert.deepEqual(readAgents("# ours\r\n" + ID("a.example") + "\r\n\n  https://b.example/k  \nhttps://c.example type=x509\n"), {
+    agents: [ID("a.example"), "https://b.example/k"],
+    errors: ['line 5: "https://c.example type=x509": expected <https JWKS URL> (protocol-01: no type= parameters)'],
   });
 });
 
@@ -887,8 +828,8 @@ test("cli: an agents.txt line that does not parse is a config error: exit 1, no 
     assert.deepEqual(urls, [], "nothing fetched");
     assert.equal(readFileSync(store, "utf8"), before, "the store as it was: the keys of the agent on line 3 are not dropped");
     assert.ok(!existsSync(`${store}.cache.json`) && !existsSync(`${store}.history`));
-    assert.match(out.join("\n"), /agents\.txt: line 3: "https:\/\/b\.example\/keys type=jwk": expected <https URL> \[type=directory\|jwks_uri\|cimd\]/);
-    assert.match(out.join("\n"), /agents\.txt: line 5: "http:\/\/c\.example": not an https origin/);
+    assert.match(out.join("\n"), /agents\.txt: line 3: "https:\/\/b\.example\/keys type=jwk": expected <https JWKS URL>/);
+    assert.match(out.join("\n"), /agents\.txt: line 5: "http:\/\/c\.example": not an https URL \(RFC 3986; no userinfo\)/);
     assert.match(out.at(-1)!, /agents\.txt: 2 line\(s\) key sync cannot use; fix them and run again\. The store was not touched$/);
   } finally {
     rmSync(d, { recursive: true, force: true });
@@ -896,7 +837,7 @@ test("cli: an agents.txt line that does not parse is a config error: exit 1, no 
 });
 
 test("cli: what it prints carries no control character, whatever a directory or the network sent", async () => {
-  const d = cliDir("https://a.example\nhttps://b.example\nhttps://c.example/k type=jwks_uri\n");
+  const d = cliDir(ID("a.example") + "\n" + ID("b.example") + "\nhttps://c.example/k\n");
   try {
     const out: string[] = [];
     const evil = "\u001b]0;owned\u0007\u001b[2J";
@@ -910,8 +851,8 @@ test("cli: what it prints carries no control character, whatever a directory or 
       }) });
     assert.equal(code, 2, out.join("\n"));
     for (const l of out) assert.doesNotMatch(l, /[\u0000-\u001f\u007f-\u009f]/, JSON.stringify(l)); // eslint-disable-line no-control-regex -- asserts no control character reaches the output
-    assert.ok(out.includes(`failed: https://a.example: the body (${new TextEncoder().encode(body).length} bytes) is not UTF-8 JSON`), out.join("\n"));
-    assert.ok(out.includes("failed: https://b.example: certificate names  ]0;owned  [2Jevil.example"), out.join("\n"));
+    assert.ok(out.includes(`failed: ${ID("a.example")}: the body (${new TextEncoder().encode(body).length} bytes) is not UTF-8 JSON`), out.join("\n"));
+    assert.ok(out.includes(`failed: ${ID("b.example")}: certificate names  ]0;owned  [2Jevil.example`), out.join("\n"));
     assert.match(out.at(-1)!, /^wba-keysync: 1 keys from 1\/3 origins/);
   } finally {
     rmSync(d, { recursive: true, force: true });

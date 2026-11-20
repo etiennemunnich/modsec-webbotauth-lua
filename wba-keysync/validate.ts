@@ -35,13 +35,13 @@
 import { readFileSync } from "node:fs";
 import { DEFAULT_LIMITS, getDirectory, guardAddress, HttpError, keysFromDirectory, printable, readCapped, resolveHost, type FetchLike, type Resolver } from "./keysync.ts";
 import { directoryProofs } from "./proof.ts";
-import { directoryIdentifier, WELL_KNOWN } from "./identifier.ts";
+import { directoryIdentifier, urlIdentifier, WELL_KNOWN } from "./identifier.ts";
 import { expandPreset, filterByPreset } from "./preset.ts";
 
 export interface Bot {
   name: string; operator?: string; category?: string;
   docs?: string | string[]; description?: string; note?: string; purpose?: string[];
-  wba?: string; wba_type?: "directory" | "jwks_uri";
+  wba?: string; wba_type?: string; // wba_type removed under protocol-01; rejected if set
   ips?: string | string[]; cidrs?: string[];
   rdns?: string[]; user_agent?: string | string[]; user_agent_example?: string;
   policy?: "allow" | "deny" | "log"; claim_only?: boolean; robots?: string | string[];
@@ -255,8 +255,8 @@ export function checkEntries(bots: Bot[]): Finding[] {
       if (!ok) f("url", "fail", `${show(u)}: not an https URL`);
     }
     // One URL: agents.txt's parser splits a line at whitespace, so "URL type=cimd" would change the agent's type.
-    if (typeof b.wba === "string" && /\s/.test(b.wba)) f("wba", "fail", `wba ${show(b.wba)}: one URL, no spaces (wba_type says the type)`);
-    if (b.wba_type !== undefined && b.wba_type !== "directory" && b.wba_type !== "jwks_uri") f("wba", "fail", "wba_type: directory or jwks_uri");
+    if (typeof b.wba === "string" && /\s/.test(b.wba)) f("wba", "fail", `wba ${show(b.wba)}: one URL, no spaces`);
+    if (b.wba_type !== undefined) f("wba", "fail", "wba_type is removed under protocol-01; put the full JWKS URL in wba");
     for (const s of asList(b.rdns)) if (typeof s !== "string" || !DNS_SUFFIX.test(s)) f("rdns", "fail", `${show(s)}: not a DNS name suffix`);
     const tokens = asList(b.user_agent);
     for (const t of tokens) if (typeof t !== "string" || !/^[\x21-\x7e][\x20-\x7e]*$/.test(t)) f("user_agent", "fail", `${show(t)}: not a printable token`);
@@ -411,8 +411,8 @@ export async function checkSources(
   }
 
   if (b.wba) {
-    const url = b.wba_type === "jwks_uri" ? b.wba : directoryIdentifier(b.wba);
-    if (!url) f("wba", "fail", `${b.wba}: not an https origin`);
+    const url = directoryIdentifier(b.wba) ?? (urlIdentifier(b.wba) ? b.wba : null);
+    if (!url) f("wba", "fail", `${b.wba}: not an https JWKS URL`);
     else {
       try {
         await guardAddress(url, resolve);

@@ -75,7 +75,9 @@ V.E1 = {
       base = '"@authority": example.com\n"signature-agent": "https://signature-agent.test"\n'
           .. '"@signature-params": ("@authority" "signature-agent");created=1735689600;keyid="oD0HwocPBSfpNy5W3bpJeyFGY_IQ_YpqxSjQ3Yd-CLA";alg="rsa-pss-sha512";expires=1735693200;nonce="XSHtZVCThSIAksXsH9WBs6AtxtXC0eQGiIcUGSoJstFs8lAWakjhrfwzLhyjtme5iXMZvmFWqDEs6cT3Jf+BbQ==";tag="web-bot-auth"' },
 }
-V.E1_DIRECTORY = "https://signature-agent.test/.well-known/http-message-signatures-directory"
+-- protocol-01: E.1 still sends an origin-only Signature-Agent; that value is
+-- the JWKS URI (root), not a silent rewrite to the well-known path.
+V.E1_DIRECTORY = "https://signature-agent.test/"
 
 --- The signature bytes of a "label=:base64:" Signature member.
 function V.sig_bytes(member) return base64.decode(member:match(":(.*):$")) end

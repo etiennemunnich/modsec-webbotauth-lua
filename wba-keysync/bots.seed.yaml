@@ -24,8 +24,8 @@
 #   docs         the operator's own pages about this bot: where the category,
 #                tokens and lists come from
 #   description  what the operator says the bot does, quoted verbatim from docs
-#   wba          where its signing keys live: an https origin, or a JWK Set URL
-#                with wba_type: jwks_uri
+#   wba          where its signing keys live: an https JWK Set URL, or an https
+#                origin (expanded to the well-known directory URL when writing agents.txt)
 #   ips          the operator's published IP list URLs
 #   rdns         reverse-DNS suffixes the operator documents, for
 #                forward-confirmed lookups

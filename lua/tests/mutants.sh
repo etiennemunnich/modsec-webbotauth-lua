@@ -97,10 +97,12 @@ mutant "site names not checked (cross-site replay)" verify.lua \
   's/if pol\.authorities and req\.authority and not pol\.authorities\[req\.authority\] then/if false then/' verify
 mutant "@target-uri does not meet a required @path (unlike a grant)" verify.lua \
   's/if not \(has\[name\] or \(name == "\@path" and has\["\@target-uri"\]\)\) then/if not has[name] then/' verify
-mutant "a non-origin http directory member is invalid, not ignored (draft 5.5)" verify.lua \
-  's/if kind == "directory" and not keys\.identifier\("https" \.\. value:sub\(#scheme \+ 1\), true\) then/if false then/' verify
-mutant "an http origin directory member is ignored, not invalid (draft 5.2.1)" verify.lua \
-  's/if kind == "directory" and not keys\.identifier\("https" \.\. value:sub\(#scheme \+ 1\), true\) then/if true then/' verify
+mutant "a parameterized Signature-Agent member accepted (protocol-01 §5.2.1)" verify.lua \
+  's/if #member\.params > 0 then/if false then/' verify
+mutant "http scheme treated as unverified instead of invalid (draft 5.2.1)" verify.lua \
+  's/if scheme and components\.ascii_lower\(scheme\) ~= "https" then/if false then/' verify
+mutant "origin-only Signature-Agent rewritten to well-known (protocol-01: no rewrite)" verify.lua \
+  's/local id = keys\.url_identifier\(value\)/local id = keys.identifier(value, true) or keys.url_identifier(value)/' verify
 mutant "the @query-param spelling retry is not capped per request" verify.lua \
   's/local alt_base = spaced and not memo\.query_alt and sigbase/local alt_base = spaced and sigbase/' verify
 mutant "no site names configured, yet signatures verify" verify.lua \
@@ -296,8 +298,8 @@ mutant "orphan labels ignored (RFC 9421 4)" verify.lua \
   's/if sigs\[label\] == nil then return result\("invalid", "orphan-label"\) end/-- removed/' verify
 mutant "URL-less requests left unverified (draft 4.3)" verify.lua \
   's/if agent_field == nil then return URL_LESS end/if agent_field == nil then return nil, "unverified", "agent-absent" end/' verify
-mutant "explicit :443 accepted in Signature-Agent (draft 5.5)" identifier.lua \
-  's/if mode == "origin" then return nil end/-- removed/' verify
+mutant "explicit :443 accepted in a directory origin (RFC 6454 / agents shorthand)" identifier.lua \
+  's/if mode == "origin" then return nil end/-- removed/' keys
 mutant "@query-param spaces as %20 (the RFC example, not its steps)" components.lua \
   's/if c == " " then return "\+" end/-- removed/' components
 
@@ -367,14 +369,9 @@ mutant "an alg pin for another key type stored" keys.lua \
 mutant "a version 1 store no longer read" keys.lua \
   's/elseif line == M\.HEADER_V1 then version = 1/elseif false then/' keys
 
-# Agent types, identifiers and possession proofs (2026-10-03): draft 5.5,
+# Signature-Agent identifiers and possession proofs (protocol-01): §5.2.1/§5.5,
 # 5.5.3, Appendix B; RFC 3986 6.2.2/6.2.3, RFC 5952, RFC 6454 6.2, RFC 9110 4.2.4.
-mutant "jwks_uri and cimd members ignored (draft 5.5)" verify.lua \
-  's/^local AGENT_TYPES = \{ directory = true, jwks_uri = true, cimd = true \}$/local AGENT_TYPES = { directory = true }/' verify
-mutant "an unsupported type resolved anyway (draft 5.2.1: MUST ignore)" verify.lua \
-  's/if t\.type ~= "token" or not AGENT_TYPES\[t\.value\] then/if false then/' verify
-mutant "a String type taken for a Token (draft 5.2.1)" verify.lua \
-  's/if t\.type ~= "token" or not AGENT_TYPES/if not AGENT_TYPES/' verify
+
 mutant "query kept in a jwks_uri/cimd identifier (draft 5.5)" identifier.lua \
   's/or remove_dot_segments\(path\)\)$/or remove_dot_segments(path)) .. suffix/' keys
 mutant "dot segments not removed (RFC 3986 6.2.2.3)" identifier.lua \
@@ -384,7 +381,7 @@ mutant "percent-encoding not normalized (RFC 3986 6.2.2.2)" identifier.lua \
 mutant "userinfo parsed as part of the host (RFC 9110 4.2.4)" identifier.lua \
   's/host:match\("\^\[a-z0-9\]\[a-z0-9\.-\]\*\$"\)/host:match("^[a-z0-9@][a-z0-9.@-]*\$")/' keys
 mutant "uppercase accepted in an origin (RFC 6454 6.2)" identifier.lua \
-  's/host:match\("\^\[a-z0-9\]\[a-z0-9\.-\]\*\$"\)/host:match("^[A-Za-z0-9][A-Za-z0-9.-]*\$")/' verify
+  's/host:match\("\^\[a-z0-9\]\[a-z0-9\.-\]\*\$"\)/host:match("^[A-Za-z0-9][A-Za-z0-9.-]*\$")/' keys
 mutant "IPv6 zero runs not compressed (RFC 5952 4.2)" identifier.lua \
   's/if len < 2 then return hex\(1, 8\) end/do return hex(1, 8) end/' keys
 mutant "IPv6 \"::\" for one zero group (RFC 5952 4.2.2)" identifier.lua \
@@ -599,24 +596,16 @@ ts_mutant "any media type accepted at the well-known URI (draft 5.5.1)" keysync.
   's/if \(atWellKnown && type !== MEDIA_TYPE\)/if (false)/' keysync
 ts_mutant "an agent's own URL not guarded (draft 6.7)" keysync.ts \
   's/^(\s*)await guardUnlessAllowed\(a\.url, resolve, ctx\.allowPrivate, warn\);$/$1\/\/ removed/' keysync
-ts_mutant "the CIMD jwks_uri hop not guarded (draft 6.7)" keysync.ts \
-  's/^(\s*)await guardAddress\(jwksUri, resolve\);$/$1\/\/ removed/' keysync
 ts_mutant "IP literals handed to DNS, never checked as written (draft 6.7)" keysync.ts \
   's/const literal = host\.startsWith\("\["\) \? host\.slice\(1, -1\) : v4\(host\) \? host : null;/const literal = null as string | null;/' keysync
 ts_mutant "SIIT IPv4-translated addresses not judged by their IPv4 address" keysync.ts \
   's/g\[4\] === 0xffff && g\[5\] === 0\) return embedded/g[4] === 0xffff && g[5] === 0) return false && embedded/' keysync
-ts_mutant "CIMD client_id not checked (CIMD 4)" keysync.ts \
-  's/if \(doc\.client_id !== a\.url\) \{/if (false) {/' keysync
-ts_mutant "CIMD jwks and jwks_uri both accepted (RFC 7591 2)" keysync.ts \
-  's/if \(doc\.jwks !== undefined && doc\.jwks_uri !== undefined\) throw/if (false) throw/' keysync
-ts_mutant "CIMD shared secret accepted (CIMD 4.1)" keysync.ts \
-  's/if \("client_secret" in doc \|\| "client_secret_expires_at" in doc/if (false/' keysync
 ts_mutant "query kept in a jwks_uri/cimd identifier (draft 5.5)" identifier.ts \
   's/const p = pctNormal\(path\);/const p = pctNormal(path + suffix);/' keysync
 ts_mutant "IPv6 zero runs not compressed (RFC 5952 4.2)" identifier.ts \
   's/if \(len < 2\) return hex\(0, 8\);/return hex(0, 8);/' keysync
-ts_mutant "Appendix B evaluated for a jwks_uri" keysync.ts \
-  's/if \(a\.type !== "directory"\) return \{ keys, life, etag, lastModified \};/\/\/ removed/' keysync
+ts_mutant "Appendix B evaluated for a non-well-known JWKS URL" keysync.ts \
+  's/if \(!atWellKnown\) return \{ keys, life, etag, lastModified \};/\/\/ removed/' keysync
 ts_mutant "proofs judged at the start of the run, not at receipt" keysync.ts \
   's/keys, now: ctx\.clock\(\) \}\);/keys, now });/' keysync
 ts_mutant "a 304 allowed to stand in for a held valid proof" keysync.ts \
@@ -685,12 +674,12 @@ ts_mutant "allow-private: an origin with a path accepted" keysync.ts \
   's/return directoryIdentifier\(value\) === null \? null : new URL\(value\)\.origin;/return urlIdentifier(value) === null ? null : new URL(value).origin;/' keysync
 ts_mutant "allow-private: an excepted fetch not reported" keysync.ts \
   's/if \(allow\.has\(origin\)\) \{ warn\(`\$\{origin\} fetched without the private-address check \(--allow-private-origin\)`\); return; \}/if (allow.has(origin)) return;/' keysync
-ts_mutant "agents: a JWK Set written as a key directory" agents.ts \
-  's/: `\$\{agent\.url\} type=\$\{agent\.type\}`;/: agent.url;/' agents
-ts_mutant "agents: a key directory written as its identifier" agents.ts \
-  's/agent\.id\.slice\(0, -WELL_KNOWN\.length\)/agent.id/' agents
+ts_mutant "agents: origin not expanded to well-known (protocol-01 agents.txt)" agents.ts \
+  's/const fetchUrl = wbaFetchUrl\(bot\.wba\);/const fetchUrl = bot.wba;/' agents
+ts_mutant "agents: well-known URL written as its origin" agents.ts \
+  's/const line = agent\.id;/const line = new URL(agent.id).origin;/' agents
 ts_mutant "agents: a bad wba skipped instead of failing the run" agents.ts \
-  's/if \(typeof agent === "string"\) throw new Error/if (typeof agent === "string") continue; if (0) throw new Error/' agents
+  's/if \(typeof fetchUrl === "object"\) throw new Error/if (typeof fetchUrl === "object") continue; if (0) throw new Error/' agents
 ts_mutant "agents: bots sharing a key source listed twice" agents.ts \
   's/else if \(held\.line === line\) held\.names\.push\(bot\.name\);/else if (held.line === line) byId.set(agent.id + bot.name, { line, names: [bot.name] });/' agents
 ts_mutant "agents: --only ignored" agents.ts \
@@ -699,8 +688,6 @@ ts_mutant "agents: --out written through a symlink" agents.ts \
   's/renameSync\(tmp, out\);/writeFileSync(out, readFileSync(tmp)); rmSync(tmp);/; s/^import \{ readFileSync, renameSync, writeFileSync \}/import { readFileSync, renameSync, rmSync, writeFileSync }/' agents
 
 
-ts_mutant "allow-private: the jwks_uri a CIMD document names excepted too" keysync.ts \
-  's/^(\s*)await guardAddress\(jwksUri, resolve\);$/$1await guardUnlessAllowed(jwksUri, resolve, ctx.allowPrivate, warn);/' keysync
 ts_mutant "key sync: the DNS lookup has no time limit (a silent DNS server holds the run)" keysync.ts \
   's/const resolve = withDeadline\(opts\.resolve \?\? lookupHost, limits\.timeoutMs\);/const resolve = opts.resolve ?? lookupHost;/' keysync
 ts_mutant "key sync: the DNS deadline timer never cleared, so every run waits it out" keysync.ts \
@@ -729,8 +716,8 @@ ts_mutant "validate: a long value written whole into a message" validate.ts \
   's/return s\.length > 200 \? `\$\{s\.slice\(0, 200\)\}\.\.\."` : s;/return s;/' validate
 ts_mutant "agents: a bot name with a newline written into agents.txt" agents.ts \
   's/if \(bad\) throw new Error\(`\$\{bad\} \(validate\.ts checks every entry\)`\);/\/\/ removed/' agents
-ts_mutant "agents: a wba with a space handed to the line parser, so its type can change" agents.ts \
-  's/if \(typeof bot\.wba !== "string" \|\| \/\\s\/\.test\(bot\.wba\)\) throw/if (false) throw/' agents
+ts_mutant "agents: a wba with a space handed to the line parser (protocol-01: spaces refused)" agents.ts \
+  's/if \(typeof bot\.wba !== "string" \|\| \/\\s\/\.test\(bot\.wba\)\) {/if (false) {/' agents
 ts_mutant "robots: a bot name with a newline written into robots.txt" robots.ts \
   's/if \(bad\) throw new Error\(`\$\{bad\} \(validate\.ts checks every entry\)`\);/\/\/ removed/' robots
 fi

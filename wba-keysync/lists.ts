@@ -69,6 +69,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { basename, join } from "node:path";
+import { directoryIdentifier } from "./identifier.ts";
 import { guardAddress, parseAgent, printable, resolveHost, writeAtomic, type FetchLike, type Resolver } from "./keysync.ts";
 import { checkEntries, extractCidrs, fetchList, formatCidr, MIN_V4_BITS, MIN_V6_BITS, parseCidr, type Bot, type Cidr } from "./validate.ts";
 
@@ -191,7 +192,7 @@ export function checkRules(bots: Bot[], mode: unknown): string[] {
   if (!(MODES as readonly unknown[]).includes(mode)) out.push(`policy_mode: ${JSON.stringify(mode)}: one of ${MODES.join(", ")}`);
   for (const b of bots) {
     for (const t of asList(b.user_agent)) if (!TOKEN.test(String(t))) out.push(`${b.name}: user_agent ${JSON.stringify(t)}: letters, digits, spaces and . _ / : + - only, no space at either end`);
-    if (b.wba && signsAs(b) === null) out.push(`${b.name}: wba ${JSON.stringify(b.wba)}: not a key directory origin or JWK Set URL key sync accepts`);
+    if (b.wba && signsAs(b) === null) out.push(`${b.name}: wba ${JSON.stringify(b.wba)}: not an https JWKS URL key sync accepts`);
   }
   return out;
 }
@@ -199,7 +200,12 @@ export function checkRules(bots: Bot[], mode: unknown): string[] {
 /** The identifier a bot signs as (tx.wba_agent), as agents.ts and key sync compute it. */
 function signsAs(b: Bot): string | null {
   if (!b.wba) return null;
-  const a = parseAgent(b.wba_type === "jwks_uri" ? `${b.wba} type=jwks_uri` : b.wba);
+  const dir = directoryIdentifier(b.wba);
+  if (!dir) {
+    const path = b.wba.replace(/^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#]*/, "").replace(/[?#].*$/, "");
+    if (path === "" || path === "/") return null;
+  }
+  const a = parseAgent(dir ?? b.wba);
   return typeof a === "string" ? null : a.id;
 }
 

@@ -162,7 +162,7 @@ expect bad-component-value    invalid/bad-component-value    # a covered header 
 expect agent-not-covered      invalid/agent-not-covered      # Signature-Agent sent but not signed
 expect ambiguous-agent        invalid/ambiguous-agent        # two members covered, neither the label's
 expect agent-not-https        invalid/agent-not-https
-expect unsupported-agent-type unverified/unsupported-agent-type
+expect parameterized-agent   unverified/bad-agent-url  # protocol-01: parameterized members ignored
 expect unparsable-agent       invalid/unparsable-agent       # covered whole, not a dictionary: never a 400 by default
 expect test-key               invalid/test-key               # RFC 9421's published Ed25519 key
 expect agent-absent           unverified/agent-absent        # URL-less, a key the store does not hold
@@ -186,10 +186,10 @@ expect alg-hmac              invalid/unsupported-alg    # draft 6.4
 echo "== agent types (draft 5.5) and possession proofs (Appendix B)"
 expect agent-jwks            verified/
 agent_of() { $DOCKER logs "$NAME" 2>&1 | grep -o "WBA-RESULT case=$1 [^']*" | tail -1 | grep -o 'agent=[^ ]*' || true; }
-[ "$(agent_of agent-jwks)" = "agent=https://jwks.example/keys.json" ] && pass "agent-jwks names the jwks_uri, query dropped" \
+[ "$(agent_of agent-jwks)" = "agent=https://jwks.example/keys.json" ] && pass "agent-jwks names the JWKS URI, query dropped" \
   || { echo "FAIL  agent-jwks agent: $(agent_of agent-jwks)"; FAIL=1; }
 expect agent-cimd            verified/
-expect agent-jwks-wrong-type unverified/bad-agent-url  # untyped means directory: an origin, never a path (5.5)
+expect agent-jwks-wrong-type unverified/bad-agent-url  # protocol-01: ;type=* ignored
 expect agent-proof           verified/
 
 echo "== logs (wba.conf rule 7, wba_log.lua): one JSON line per signed request, none for unsigned, never the signature"

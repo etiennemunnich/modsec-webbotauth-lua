@@ -52,7 +52,8 @@ print(r.status .. "/" .. r.reason .. " " .. tostring(r.agent))
       assert.equal(out.status, 0, out.stderr);
       return out.stdout.trim();
     };
-    assert.equal(run("/agents/hello"), `verified/ ${AGENT}/.well-known/http-message-signatures-directory`);
+    assert.equal(run("/agents/hello"), `verified/ ${AGENT}/.well-known/http-message-signatures-directory`,
+      "origin --agent expands to the well-known JWKS URL on the wire and in the store");
     assert.equal(run("/agents/other"), "invalid/bad-signature nil", "@path is covered");
     assert.equal(run("/agents/hello", "POST"), "invalid/bad-signature nil", "@method is covered");
   } finally {

@@ -151,15 +151,13 @@ bun wba-keysync/agents.ts bots.yaml --out /srv/wba/agents.txt  # 3. write agents
 You can also write `agents.txt` by hand, at any path you give key sync with `--origins`:
 
 ```
-# a key directory (the default type): the origin
-https://bot.example
-# a JWK Set URL
-https://bot.example/keys/jwks.json type=jwks_uri
-# an OAuth Client ID Metadata Document
-https://bot.example/oauth/client type=cimd
+# well-known directory (full JWKS URL)
+https://bot.example/.well-known/http-message-signatures-directory
+# any other HTTPS JWK Set URL
+https://bot.example/keys/jwks.json
 ```
 
-A key directory is listed by its origin: `https://`, the bot's host name in lower case and any port other than 443, with no path. Each bot's documentation says which URL and type it signs with.
+List each bot by the HTTPS JWK Set URL key sync should fetch (protocol-01). In `bots.yaml`, an origin-only `wba` is expanded to the well-known directory URL when writing `agents.txt`; on the wire, bots put that full JWKS URI in `Signature-Agent` (no `;type=` parameters).
 
 **Decide bot by bot.** `bun wba-keysync/report.ts bots.yaml --log <your WAF log> --out report.md` writes a report with three parts:
 - what each bot can prove: a signature, an IP list, reverse DNS, or only a User-Agent claim;
@@ -170,7 +168,7 @@ Copy each decision into the bot's entry in `bots.yaml` as `policy:`. [`lists.ts`
 
 ### 3. Keep their keys current
 
-[`wba-keysync/cli.ts`](../../wba-keysync/cli.ts) `--origins agents.txt` fetches public keys only for those URLs. It writes them to the key store, the file of public keys the verifier reads. Run it every minute. It fetches a directory again only when its HTTP cache lifetime has run out, so most runs send no request at all. It never runs while a request waits. A listed CIMD document can also name a `jwks_uri` (that document's server chooses it, so that hop always gets the private-address check).
+[`wba-keysync/cli.ts`](../../wba-keysync/cli.ts) `--origins agents.txt` fetches public keys only for those URLs. It writes them to the key store, the file of public keys the verifier reads. Run it every minute. It fetches a directory again only when its HTTP cache lifetime has run out, so most runs send no request at all. It never runs while a request waits. Each listed URL is fetched as a JWK Set (protocol-01); there is no separate CIMD discovery hop.
 
 The examples below are for a Linux host. The repository is at `/opt/web-bot-auth`, the files are in `/srv/wba`, and key sync runs as the user `wba`. Use your own paths and user. Cron's `PATH` does not include Bun's default install directory (`~/.bun/bin`), so give the full path that `command -v bun` prints.
 
@@ -211,7 +209,7 @@ Watch the exit code:
 
 Key sync writes a new store and renames it over the old one in one step (an atomic rename), so a reader never sees half a file. Its HTTP cache and its history of every key added or removed sit next to the store ([The files](#the-files)). [DESIGN.md](DESIGN.md#wba-keysync-in-detail) says what it checks on every fetch.
 
-**Your own bots on your own network.** Key sync never fetches from a private, loopback or link-local address (draft 6.7). For a bot whose keys are reachable only inside, name its exact origin on the command line, once for each: `--allow-private-origin https://bot.internal:8443`. Each such fetch is printed as a warning, and no `agents.txt` or bots file can turn it on. It covers only the URLs your `agents.txt` lists on that origin, never a `jwks_uri` that a CIMD document names. An `agents.txt` line can name any path on an excepted origin, so except only hosts you run. For `lists.ts`, name each private list's exact URL: `--allow-private-url https://lists.internal/bot.json`. TLS is still checked: give key sync your own CA with `NODE_EXTRA_CA_CERTS=/path/to/ca.pem`.
+**Your own bots on your own network.** Key sync never fetches from a private, loopback or link-local address (draft 6.7). For a bot whose keys are reachable only inside, name its exact origin on the command line, once for each: `--allow-private-origin https://bot.internal:8443`. Each such fetch is printed as a warning, and no `agents.txt` or bots file can turn it on. It covers only the URLs your `agents.txt` lists on that origin. An `agents.txt` line can name any path on an excepted origin, so except only hosts you run. For `lists.ts`, name each private list's exact URL: `--allow-private-url https://lists.internal/bot.json`. TLS is still checked: give key sync your own CA with `NODE_EXTRA_CA_CERTS=/path/to/ca.pem`.
 
 ### 4. Run the WAF
 
@@ -528,7 +526,7 @@ It needs Bun and `curl`. The draft vectors also need `lua` and `openssl`, and ar
 1. **Once:** `lua/tests/interop/interop.sh init /etc/wba-interop` creates your interop key (`/etc/wba-interop` is an example; any directory works). The private key stays on that host.
 2. **Publish the public half:**
    - Serve `/etc/wba-interop/interop.jwks.json` from an https URL you control.
-   - Add that URL to `agents.txt`, for example `https://www.example.com/.well-known/wba-interop.jwks.json type=jwks_uri`. Key sync picks it up.
+   - Add that URL to `agents.txt`, for example `https://www.example.com/.well-known/wba-interop.jwks.json`. Key sync picks it up.
    - **Never put it in `tx.wba_grant_agents`.** The interop agent must unlock nothing, so a leaked key is only a nuisance. To change the key, run `init` again and replace the file.
 3. **Run it** from cron:
 
@@ -635,7 +633,7 @@ The same `sighash` twice is a replay, or, for the deterministic Ed25519 and RSA 
 | `unverified/unknown-agent` | the request names a bot that is not in your key store; the log line does not say which | find it with the audit rule in [Other logs](#other-logs); then add it to your bots file and run `agents.ts` (or add it to `agents.txt`), then key sync |
 | `unverified/unknown-key` | the bot is listed, the key is not: it changed, or key sync has not run since | check the timer, and key sync's exit code and output |
 | `unverified/key-not-current` | the bot's directory dates the key outside now (`nbf`, `exp`) | nothing on your side |
-| `unverified/bad-agent-url`, `unsupported-agent-type` | the bot's `Signature-Agent` is not a valid URL of a known type, or names a key directory by more than its origin (the draft says to ignore such a member) | the bot's to fix ([FOR-BOT-OPERATORS.md](FOR-BOT-OPERATORS.md)) |
+| `unverified/bad-agent-url` | the bot's `Signature-Agent` is not a usable https JWKS URI, or carries parameters (protocol-01 says to ignore parameterized members) | the bot's to fix ([FOR-BOT-OPERATORS.md](FOR-BOT-OPERATORS.md)) |
 | `invalid/expired`, `not-yet-valid`, `too-old` | an old request replayed, or a clock off here or at the bot (60 s allowed ahead; none past `expires` unless `tx.wba_expiry_grace`) | check NTP on the WAF |
 | `invalid/window-too-long` | the signature's window is longer than `tx.wba_max_window`, or longer than a day with `tx.wba_max_age` off | raise or remove the cap, turn the maximum age back on, or ask the bot for shorter windows |
 | `invalid/bad-signature` | forged, or something between the bot and you changed a part it signed (a CDN rewriting `Host` or the path) | check what sits in front of nginx |
@@ -658,7 +656,7 @@ The same `sighash` twice is a replay, or, for the deterministic Ed25519 and RSA 
 |---|---|---|
 | `verified` | (empty), `url-less` | As defined in [What every request gets](#what-every-request-gets). |
 | `invalid` | `foreign-authority`, `bad-signature`, `expired`, `too-old`, `not-yet-valid`, `window-too-long`, `missing-param`, `bad-param`, `bad-keyid`, `unsupported-alg`, `alg-mismatch`, `alg-undetermined`, `authority-not-covered`, `agent-not-covered`, `ambiguous-agent`, `agent-not-https`, `missing-component`, `unsupported-component`, `duplicate-component`, `bad-component-value`, `malformed-headers`, `unparsable-agent`, `orphan-label`, `test-key`, `digest-mismatch`, `malformed-digest`, `bad-content-coding` | A check failed. `malformed-headers` and `malformed-digest` also get 400 (rule 9534107). With the default `tx.wba_malformed=ignore`, an unparsable signature header gives `not-signed/unparsable-field` or `invalid/unparsable-agent` instead of `malformed-headers`. |
-| `unverified` | `no-site-names`, `unknown-agent`, `unknown-key`, `key-not-current`, `bad-agent-url`, `unsupported-agent-type`, `agent-absent`, `digest-pending`, `digest-algorithm-unsupported`, `digest-coding-unsupported`, `digest-partial`, `body-incomplete`, `body-too-large`, `insufficient-coverage`, `too-many-signatures`, `missing-nonce`, `bad-config`, `keystore-unavailable`, `replay-unavailable`, `crypto-error`, `engine-error`, `internal-error` | Could not decide: key not held, agent URL ignored, body not (yet) checkable, a setting not met, or an infrastructure fault. Never treated as success. `too-many-signatures` happens only if you set a cap, `CONFIG.policy.max_signatures` in `modsecurity_entry.lua`: there is none by default. |
+| `unverified` | `no-site-names`, `unknown-agent`, `unknown-key`, `key-not-current`, `bad-agent-url`, `agent-absent`, `digest-pending`, `digest-algorithm-unsupported`, `digest-coding-unsupported`, `digest-partial`, `body-incomplete`, `body-too-large`, `insufficient-coverage`, `too-many-signatures`, `missing-nonce`, `bad-config`, `keystore-unavailable`, `replay-unavailable`, `crypto-error`, `engine-error`, `internal-error` | Could not decide: key not held, agent URL ignored, body not (yet) checkable, a setting not met, or an infrastructure fault. Never treated as success. `too-many-signatures` happens only if you set a cap, `CONFIG.policy.max_signatures` in `modsecurity_entry.lua`: there is none by default. |
 | `not-signed` | `no-signature`, `no-wba-signature`, `unparsable-field` | No Web Bot Auth signature on the request (by default, an unparsable signature header counts as none). |
 
 A request with several signatures gets the best outcome among them. [DESIGN.md](DESIGN.md#several-signatures-on-one-request) has the ranking.

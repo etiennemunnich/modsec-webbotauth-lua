@@ -3,14 +3,14 @@ identifier.lua: Signature-Agent identifiers (draft 5.5). wba-keysync's
 identifier.ts implements the same rules, and both suites run every row of
 lua/tests/fixtures/identifiers.tsv, so the two cannot drift apart.
 
-"All three types produce an identifier: the URL the verifier resolved, with
-any query and fragment discarded." (5.5)
+"The identifier is the URL the verifier resolved, with any query and fragment
+discarded." (protocol-01 §5.5). Wire Signature-Agent always uses url().
 
-  directory(origin, strict)  type=directory (the default): the well-known URI
-                             at the origin, https://<host>[:<port>]/.well-known/
+  directory(origin, strict)  well-known URI helper (agents.txt / registry
+                             shorthand): https://<host>[:<port>]/.well-known/
                              http-message-signatures-directory
-  url(value)                 type=jwks_uri and type=cimd: the member value,
-                             query and fragment discarded
+  url(value)                 member value as a JWKS URI, query and fragment
+                             discarded
   valid(id)                  true when id is an identifier: the normal form of
                              itself (every directory identifier is one too)
 

@@ -103,14 +103,14 @@ These are refused as `invalid/unsupported-component`, because RFC 9421 2.5 requi
 
 ### Agent URLs
 
-How a `Signature-Agent` member is read:
+How a `Signature-Agent` member is read (protocol-01 §5.2.1 / §5.5):
 
-- A URL whose scheme is not `https` (`http://bot.example`, say) is `invalid/agent-not-https` (draft 5.2.1), except a `directory` member that is not an origin, which is ignored whatever its scheme (below).
-- The `type` parameter (a Token, draft 5.2.1) picks the mechanism: absent or `directory`, `jwks_uri`, `cimd`. Any other type, or a type sent as a String, is ignored, as 5.2.1 requires: `unverified/unsupported-agent-type`. The mechanism is never inferred from the URL.
-- `directory`: a value that is not the exact ASCII serialization of an origin (a path, a mixed-case host, an explicit default port such as `https://agent.example:443`, RFC 6454 6.2) is ignored, as draft 5.5 requires, which leaves the request `unverified/bad-agent-url`. An empty path `/` is accepted, as 5.5 allows.
-- `jwks_uri` and `cimd`: the identifier is the member value normalized per RFC 3986 6.2.2 and 6.2.3, query and fragment dropped, so every spelling of one URL is one identifier. A value that is not a URI, carries userinfo (RFC 9110 4.2.4), or names a port with a leading zero is ignored: `unverified/bad-agent-url`. Lookup is keyed on (identifier, keyid) whatever the type: a `jwks_uri` member naming a listed directory's well-known URI is that directory.
-- IPv6 literal hosts (`https://[2001:db8::1]:8443`) work in every type. The identifier holds the address in RFC 5952 canonical text, so `[2001:0db8:0:0::1]` and `[2001:db8::1]` are one identifier; uppercase hex, a zone identifier or an IPvFuture literal is ignored.
-- No `Signature-Agent` header at all: draft 4.3 makes the keyid thumbprint the identifier. A held key (under any identifier in the store) verifies the request as `verified/url-less`, attributed to the key alone; a key not held is `unverified/agent-absent`. A header that is present but whose member the signature does not cover is `invalid/agent-not-covered` (5.2.1).
+- The member value is a **direct HTTPS JWK Set URI**. The identifier is that URL normalized per RFC 3986 6.2.2 and 6.2.3, query and fragment dropped (`keys.url_identifier`). There is **no** origin→well-known rewrite on the wire.
+- Dictionary members **MUST NOT** carry parameters. Any parameterized member (including obsolete `;type=directory|jwks_uri|cimd` from draft -00) is ignored: `unverified/bad-agent-url`.
+- A URL whose scheme is not `https` is `invalid/agent-not-https` (5.2.1). A value that is not an https URI, carries userinfo (RFC 9110 4.2.4), or names a port with a leading zero is ignored: `unverified/bad-agent-url`.
+- Cloudflare dual-parse: a legacy bare quoted-string `Signature-Agent` is still accepted (MAY under 5.2.1); dictionary form is required of signers.
+- IPv6 literal hosts (`https://[2001:db8::1]:8443/keys.json`) work. The identifier holds the address in RFC 5952 canonical text.
+- No `Signature-Agent` header at all: draft 4.3 makes the keyid thumbprint the identifier. A held key verifies as `verified/url-less`; a key not held is `unverified/agent-absent`. A header present but not covered is `invalid/agent-not-covered` (5.2.1).
 
 ## Several signatures on one request
 
@@ -146,7 +146,7 @@ The limits stay: only the second copy to arrive is refused, and counts are per h
 
 ## wba-keysync in detail
 
-Keys are fetched **out of band**, never on the request path. ModSecurity makes no network calls, and a request's `Signature-Agent` header can never steer a fetch: only URLs you list are fetched, and a CIMD's `jwks_uri` hop only from a document at a URL you listed. Their DNS is still someone else's, so before every fetch, the hop included, key sync refuses a host that is, or resolves to, a private, loopback or link-local address (draft 6.7), unless you name that exact origin with `--allow-private-origin` ([README](README.md#3-keep-their-keys-current)), which covers the URLs `agents.txt` lists there and never the `jwks_uri` hop; the DNS lookup is bounded by the same time limit as the fetch; an IP literal is checked as written and never sent to DNS. A name that changes its answer between that check and the fetch (DNS rebinding) is not caught; TLS certificate validation is what stops that reaching an internal service.
+Keys are fetched **out of band**, never on the request path. ModSecurity makes no network calls, and a request's `Signature-Agent` header can never steer a fetch: only HTTPS JWKS URLs you list in `agents.txt` are fetched. Their DNS is still someone else's, so before every fetch key sync refuses a host that is, or resolves to, a private, loopback or link-local address (draft 6.7), unless you name that exact origin with `--allow-private-origin` ([README](README.md#3-keep-their-keys-current)); the DNS lookup is bounded by the same time limit as the fetch; an IP literal is checked as written and never sent to DNS. A name that changes its answer between that check and the fetch (DNS rebinding) is not caught; TLS certificate validation is what stops that reaching an internal service.
 
 Run it every minute; that is cheap. Each directory is cached under HTTP's rules (draft 5.5.2 and C.4; RFC 9111 freshness, capped at a day) and fetched again only when stale, conditionally (`If-None-Match`, `If-Modified-Since`). So a key a directory removes stops verifying when that directory's cache lifetime says. A failed fetch backs off from 30 s to at most 5 minutes, or for the directory's `Retry-After` (draft C.5).
 
@@ -158,7 +158,6 @@ What it does:
 - It keeps Ed25519 (`OKP`), EC P-256 and P-384, and RSA keys; other key types and curves (X25519, P-521, `oct`) have no algorithm here and are ignored.
 - It never trusts `kid`: each key is indexed by the RFC 7638 thumbprint it computes itself (draft 5.2; RFC 8037 A.3 for Ed25519). At the well-known URI a key whose `kid` is not that thumbprint is rejected (draft 5.5: it MUST be); elsewhere `kid` is the bot operator's label and is ignored.
 - It checks each key's encoding before computing that thumbprint: strict base64url (no padding, zero pad bits), EC coordinates full size and the point on its curve, RSA `n` and `e` minimal (RFC 7518 2), and the RSA rules under [Algorithms](#algorithms). So each key has one spelling, and one thumbprint.
-- A `cimd` document must name itself: its `client_id` is the URL fetched (CIMD 4). Its keys come from `jwks`, or from `jwks_uri` fetched under the same rules, never both (RFC 7591 2); a document with a shared secret is refused (CIMD 4.1). Its freshness is the shorter of the two responses'.
 - It rejects keys whose private half is published (draft 6.8): RFC 9421 B.1.1 to B.1.4, RFC 8032 7.1's five, and the JOSE examples (RFC 7517 A.2, RFC 7515 A.2 and A.3); and any key published with private members (`d`, `p`, `k` and the like).
 - It reads a key's `alg`, when present, as the HTTP name for its own type ([Algorithms](#algorithms)) or that name's exact JOSE twin (`EdDSA` or `Ed25519`, `ES256`, `ES384`, `PS512`, `RS256`). Draft 5.5.1 restricts `alg` to the HTTP registry but also makes every key set a JWK Set, whose `alg` is a JOSE name (RFC 7517 4.4); no value satisfies both (WG issue #136), and live signers publish the JOSE names ([CONFORMANCE.md](CONFORMANCE.md), item 7b). A key with any other `alg`, or one for another key type, is skipped (RFC 9421 3.2 step 6.5). A valid `alg` is stored as its HTTP name, and the verifier holds every signature to it.
 - It validates a directory's [possession proofs](#possession-proofs), with the same algorithm rules, and records each key's in the store. Every key is used either way.

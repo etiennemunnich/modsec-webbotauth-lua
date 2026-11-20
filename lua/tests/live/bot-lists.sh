@@ -84,7 +84,7 @@ serve 19449 "$W/nestbot.json" /nestbot.json
 bun wba-keysync/sign.ts init "$W/signer" --agent https://localhost:19448 >/dev/null
 cp "$W/signer/test-agent.jwks.json" "$W/signer.served.json"
 serve 19448 "$W/signer.served.json"
-printf 'https://localhost:19448\n' > "$W/agents.txt"
+printf 'https://localhost:19448/.well-known/http-message-signatures-directory\n' > "$W/agents.txt"
 NODE_EXTRA_CA_CERTS="$W/tls/ca.pem" bun wba-keysync/cli.ts --origins "$W/agents.txt" --out "$W/keys/wba-keys.tsv" \
   --allow-private-origin https://localhost:19448 > "$W/sync.log" 2>&1
 chmod 755 "$W/keys"; chmod 644 "$W/keys/wba-keys.tsv"

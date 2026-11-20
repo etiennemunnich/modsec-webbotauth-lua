@@ -7,11 +7,11 @@ This page explains, with diagrams, how a bot signs a request, how the bots' keys
 | Word | Meaning here |
 |---|---|
 | **Bot operator** | The company that runs a bot or AI agent, for example OpenAI for ChatGPT's agent. |
-| **Draft -00** | [draft-ietf-webbotauth-httpsig-protocol-00](https://datatracker.ietf.org/doc/draft-ietf-webbotauth-httpsig-protocol/), the Web Bot Auth protocol draft this plugin implements. It builds on [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421), HTTP Message Signatures. |
+| **Draft -01** | [draft-ietf-webbotauth-httpsig-protocol-01](https://datatracker.ietf.org/doc/draft-ietf-webbotauth-httpsig-protocol/), the Web Bot Auth protocol draft this plugin implements. It builds on [RFC 9421](https://www.rfc-editor.org/rfc/rfc9421), HTTP Message Signatures. |
 | **Key pair** | Two linked keys. The bot keeps the **private key** secret and signs with it; anyone can check a signature with the matching **public key**. |
 | **Signature** | A short value the bot computes over parts of its request with its private key. Only the private key's holder can produce it, and changing a signed part breaks it. |
 | **Key directory** | A file the bot operator publishes on its own website, at `https://<their site>/.well-known/http-message-signatures-directory`, listing its public keys. |
-| **`Signature-Agent`** | A request header in which the bot names its key directory. |
+| **`Signature-Agent`** | A request header in which the bot names its JWK Set URL. |
 | **`agents.txt`** | The key sources key sync may fetch, one per line. `wba-keysync/bots.seed.yaml` is the starter copy of the local registry. Operators copy it to `bots.yaml`, delete or add bots, then `agents.ts` writes `agents.txt` from the uncommented `wba:` lines. This is not an IETF registry and not a public signup. The drafts do not define this file. Keys from bots not on `agents.txt` are never trusted. |
 | **Key sync** | `wba-keysync`, a small program you run on a timer. `wba-keysync/cli.ts --origins agents.txt` fetches public keys only for those URLs and writes them to the key store. |
 | **Key store** | `wba-keys.tsv`, the file of public keys the WAF reads. |
@@ -48,7 +48,7 @@ flowchart LR
 
 ## 1. How a bot signs a request
 
-The bot chooses which parts of its request to sign. Draft -00 requires at least the site name (`@authority`, from the Host header, or the full `@target-uri`) and, when it sends one, the `Signature-Agent` entry naming its key directory; many bots also sign the method and path.
+The bot chooses which parts of its request to sign. Draft -01 requires at least the site name (`@authority`, from the Host header, or the full `@target-uri`) and, when it sends one, the `Signature-Agent` entry naming its JWK Set URL; many bots also sign the method and path.
 
 ```mermaid
 sequenceDiagram
@@ -65,12 +65,12 @@ sequenceDiagram
 What the three headers look like (one signature, labelled `sig1`):
 
 ```
-Signature-Agent: sig1="https://bot.example"
+Signature-Agent: sig1="https://bot.example/.well-known/http-message-signatures-directory"
 Signature-Input: sig1=("@authority" "signature-agent";key="sig1");created=1790922496;expires=1790922556;keyid="eTnUpXZYhQFajMO2QSWeganNyW1dkGV58okMu-2NJLY";tag="web-bot-auth"
 Signature: sig1=:<base64 signature>:
 ```
 
-The `keyid` is the key's [RFC 7638](https://www.rfc-editor.org/rfc/rfc7638) thumbprint, a hash of the public key, so the verifier can find the right key in the bot's directory. This example signs only the site name and the `Signature-Agent` entry, the least Draft -00 allows. It can be `verified` but is never granted (`tx.wba_granted` stays 0): a signature over the site name alone works for any page, so a grant needs `@method` and `@path` too.
+The `keyid` is the key's [RFC 7638](https://www.rfc-editor.org/rfc/rfc7638) thumbprint, a hash of the public key, so the verifier can find the right key in the bot's directory. This example signs only the site name and the `Signature-Agent` entry, the least Draft -01 allows. It can be `verified` but is never granted (`tx.wba_granted` stays 0): a signature over the site name alone works for any page, so a grant needs `@method` and `@path` too.
 
 ## 2. How the bots' keys reach your WAF
 
