@@ -214,7 +214,7 @@ test("checkEntries: a name is a string (YAML reads name: 360 as a number), not r
   assert.deepEqual(fails([{ name: "tokens", ...ok }]),
     ["tokens name: name \"tokens\" is reserved: lists.ts writes its own tokens.data beside each bot's <name>.data"]);
   assert.deepEqual(fails([{ name: "w", wba: "https://w.example/client type=cimd" }]),
-    ['w wba: wba "https://w.example/client type=cimd": one URL, no spaces (wba_type says the type)']);
+    ['w wba: wba "https://w.example/client type=cimd": one URL, no spaces']);
 });
 
 test("checkEntries: a value is shown cut short, and a nested one by its kind, never serialised whole", () => {

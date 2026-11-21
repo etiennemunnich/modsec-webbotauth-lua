@@ -5,13 +5,11 @@
 //
 // Runs out of band (cron / systemd timer), never on the request path, so
 // ModSecurity never makes a network call and the Signature-Agent header can
-// never steer a fetch: what is fetched is the URLs listed in agents.txt,
-// whatever their type (draft 5.5: directory, jwks_uri, cimd), plus the
-// jwks_uri that a listed CIMD document names, which whoever serves that
-// document chooses. Their DNS is third-party too, so a host that is, or
-// resolves to, a private, loopback or link-local address is refused before
-// every fetch, the CIMD's jwks_uri hop included (draft 6.7), and the lookup
-// has the same time limit as the fetch.
+// never steer a fetch: what is fetched is the HTTPS JWK Set URLs listed in
+// agents.txt (protocol-01 §5.5: one URL = fetch URL = identifier). Their DNS
+// is third-party too, so a host that is, or resolves to, a private, loopback
+// or link-local address is refused before every fetch (draft 6.7), and the
+// lookup has the same time limit as the fetch.
 //
 // Each directory is cached with HTTP's own rules (draft 5.5.2 and C.4, RFC
 // 9111): it is fetched again when its freshness lifetime ends, with
@@ -32,14 +30,14 @@ import { WELL_KNOWN, directoryIdentifier, urlIdentifier, validIdentifier } from 
 import { directoryProofs, type Proof } from "./proof.ts";
 import { ALGORITHMS, RSA_LARGE_BITS, RSA_LARGE_MAX_E_BITS, RSA_MAX_BITS, RSA_MAX_E_BITS, RSA_MIN_BITS, jwkAlgorithm, type KeyType } from "./algorithms.ts";
 
-export { WELL_KNOWN, urlIdentifier };
+export { WELL_KNOWN, urlIdentifier, directoryIdentifier };
 export const MEDIA_TYPE = "application/http-message-signatures-directory+json";
 const HEADER = "# wba-keys v2";
 const HEADER_V1 = "# wba-keys v1"; // Ed25519 only, no alg, proof none; still read (parse), never written
 
 // Draft section 6.8: verifiers SHOULD reject known test keys: keys whose
 // private half is published, "including the example keys in [RFC 9421]".
-// Same list as verify.lua.
+// Same list as verify.lua (draft 6.8; ASH-suppressed public thumbprints).
 const TEST_KEY_THUMBPRINTS = new Set([
   // RFC 9421 B.1.4 (Ed25519; the draft's E.2 examples), B.1.1 (RSA), B.1.2
   // (RSA-PSS; the draft's E.1 examples), B.1.3 (ECC P-256).
@@ -99,46 +97,26 @@ export function identifier(origin: string): string | null {
   return directoryIdentifier(origin);
 }
 
-type AgentType = "directory" | "jwks_uri" | "cimd";
-/** One agents.txt entry: the line, its type, the URL to fetch, and its identifier (draft 5.5). */
-export interface Agent { line: string; type: AgentType; url: string; id: string }
+/** One agents.txt entry: the line, the URL to fetch, and its identifier (protocol-01 §5.5). */
+export interface Agent { line: string; url: string; id: string }
 
 /**
- * CIMD 3 rules for a Client Identifier URL that urlIdentifier() does not
- * already enforce (https, no userinfo): a path, no dot segments, no fragment.
- */
-function cimdUrlProblem(url: string): string | null {
-  const rest = url.replace(/^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#]*/, "");
-  const path = /^[^?#]*/.exec(rest)![0];
-  if (path === "") return "CIMD 3: a Client Identifier URL MUST contain a path";
-  if (path.split("/").some((s) => /^(?:\.|%2e){1,2}$/i.test(s))) return "CIMD 3: MUST NOT contain dot segments";
-  if (rest.includes("#")) return "CIMD 3: MUST NOT contain a fragment";
-  return null;
-}
-
-/**
- * One agents.txt line: "<https URL> [type=directory|jwks_uri|cimd]". The type
- * defaults to directory, as in Signature-Agent (draft 5.2.1). A directory is
- * an origin, fetched at its well-known URI; jwks_uri and cimd are fetched as
- * written, and identified by urlIdentifier() (query and fragment dropped).
+ * One agents.txt line: a single HTTPS JWK Set URL (protocol-01 §5.5).
+ * Identifier = urlIdentifier(url) (query and fragment dropped). Obsolete
+ * `type=directory|jwks_uri|cimd` arguments are refused at write/parse time.
  * Returns why the line is unusable instead of an Agent.
  */
 export function parseAgent(line: string): Agent | string {
-  const [url, typeArg, ...rest] = line.trim().split(/\s+/);
-  let type: AgentType = "directory";
-  if (typeArg !== undefined) {
-    const m = /^type=(directory|jwks_uri|cimd)$/.exec(typeArg);
-    if (!m || rest.length > 0) return "expected <https URL> [type=directory|jwks_uri|cimd]";
-    type = m[1] as AgentType;
+  const parts = line.trim().split(/\s+/).filter(Boolean);
+  if (parts.length !== 1) {
+    return parts.some((p) => /^type=/.test(p))
+      ? "expected <https JWKS URL> (protocol-01: no type= parameters)"
+      : "expected <https JWKS URL>";
   }
-  if (type === "directory") {
-    const id = directoryIdentifier(url ?? "");
-    return id ? { line, type, url: id, id } : "not an https origin (https://host[:port] only)";
-  }
-  const id = urlIdentifier(url ?? "");
+  const url = parts[0]!;
+  const id = urlIdentifier(url);
   if (!id) return "not an https URL (RFC 3986; no userinfo)";
-  const why = type === "cimd" ? cimdUrlProblem(url) : null;
-  return why ?? { line, type, url, id };
+  return { line, url, id };
 }
 
 function base64url(bytes: Uint8Array): string {
@@ -557,16 +535,11 @@ export type Cache = Record<string, CacheEntry>;
 type Keys = Omit<StoreEntry, "identifier">[];
 interface Resolution { keys: Keys; life: number; etag?: string; lastModified?: string; proof?: Omit<ProofReport, "origin" | "identifier"> }
 
-// CIMD 4.1: no shared secrets in a Client ID Metadata Document.
-const SHARED_SECRET_METHODS = new Set(["client_secret_post", "client_secret_basic", "client_secret_jwt"]);
-
 /**
- * Resolve one listed agent to its keys (draft 5.5), guarding every fetch
- * (6.7). directory and jwks_uri: one JWK Set; a directory's Appendix B
- * proofs are validated and set on each key. cimd: the Client ID Metadata
- * Document, whose client_id must be the URL fetched (CIMD 4), then its jwks,
- * or its jwks_uri fetched under the same rules; freshness is the shorter of
- * the two responses'.
+ * Resolve one listed agent to its keys (protocol-01 §5.5): fetch the URL
+ * directly as a JWK Set, guarding every fetch (6.7). When the URL is the
+ * well-known directory path, Appendix B possession proofs are validated and
+ * set on each key.
  */
 async function resolveAgent(a: Agent, ctx: {
   limits: Limits; now: number; clock: () => number; fetchImpl?: FetchLike; resolve: Resolver; validators?: Validators;
@@ -574,45 +547,23 @@ async function resolveAgent(a: Agent, ctx: {
 }): Promise<Resolution> {
   const { limits, now, fetchImpl, resolve, warn } = ctx;
   await guardUnlessAllowed(a.url, resolve, ctx.allowPrivate, warn);
-  if (a.type !== "cimd") {
-    const res = await getDirectory(a.url, limits, fetchImpl, ctx.validators);
-    const life = freshnessLifetime(res.headers, now);
-    const etag = res.headers.get("etag") ?? (res.notModified ? ctx.validators?.etag : undefined) ?? undefined;
-    const lastModified = res.headers.get("last-modified") ?? (res.notModified ? ctx.validators?.lastModified : undefined) ?? undefined;
-    if (res.notModified) return { keys: ctx.held, life, etag, lastModified };
-    const keys = await keysFromDirectory(res.doc, limits, now, warn, new URL(a.url).pathname === WELL_KNOWN);
-    if (a.type !== "directory") return { keys, life, etag, lastModified };
-    // Judged at receipt: a created signed while the fetch was in flight is not "in the future" (B.1).
-    const p = await directoryProofs({ authority: new URL(a.url).host, headers: res.headers, body: res.body!, keys, now: ctx.clock() });
-    for (const k of keys) {
-      const kp = p.keys.get(k.keyid)!;
-      k.proof = kp.proof;
-      if (kp.expires !== undefined) k.proofExpires = kp.expires;
-    }
-    const valid = keys.filter((k) => k.proof === "valid").length;
-    return { keys, life, etag, lastModified, proof: { summary: p.summary, valid, keys: keys.length, notes: p.notes } };
-  }
-  const res = await getDirectory(a.url, limits, fetchImpl, undefined, "application/json");
-  const doc = res.doc as Record<string, unknown>;
-  if (typeof doc !== "object" || doc === null || Array.isArray(doc)) throw new Error("CIMD 4: not a JSON object");
-  if (doc.client_id !== a.url) {
-    throw new Error(`CIMD 4: client_id ${JSON.stringify(doc.client_id ?? null).slice(0, 80)} is not the URL fetched`);
-  }
-  if ("client_secret" in doc || "client_secret_expires_at" in doc
-    || SHARED_SECRET_METHODS.has(String(doc.token_endpoint_auth_method))) {
-    throw new Error("CIMD 4.1: a shared secret MUST NOT be used");
-  }
-  if (doc.jwks !== undefined && doc.jwks_uri !== undefined) throw new Error("RFC 7591 2: jwks and jwks_uri MUST NOT both be present");
+  const res = await getDirectory(a.url, limits, fetchImpl, ctx.validators);
   const life = freshnessLifetime(res.headers, now);
-  if (doc.jwks !== undefined) return { keys: await keysFromDirectory(doc.jwks, limits, now, warn, false), life };
-  const jwksUri = doc.jwks_uri;
-  if (jwksUri === undefined) throw new Error("CIMD has no jwks or jwks_uri: no key material (draft 5.5)");
-  if (typeof jwksUri !== "string" || urlIdentifier(jwksUri) === null) throw new Error("CIMD jwks_uri is not an https URL");
-  // Named by the document, not by agents.txt: --allow-private-origin never covers it.
-  await guardAddress(jwksUri, resolve);
-  const res2 = await getDirectory(jwksUri, limits, fetchImpl);
-  const keys = await keysFromDirectory(res2.doc, limits, now, warn, new URL(jwksUri).pathname === WELL_KNOWN);
-  return { keys, life: Math.min(life, freshnessLifetime(res2.headers, now)) };
+  const etag = res.headers.get("etag") ?? (res.notModified ? ctx.validators?.etag : undefined) ?? undefined;
+  const lastModified = res.headers.get("last-modified") ?? (res.notModified ? ctx.validators?.lastModified : undefined) ?? undefined;
+  if (res.notModified) return { keys: ctx.held, life, etag, lastModified };
+  const atWellKnown = new URL(a.url).pathname === WELL_KNOWN;
+  const keys = await keysFromDirectory(res.doc, limits, now, warn, atWellKnown);
+  if (!atWellKnown) return { keys, life, etag, lastModified };
+  // Judged at receipt: a created signed while the fetch was in flight is not "in the future" (B.1).
+  const p = await directoryProofs({ authority: new URL(a.url).host, headers: res.headers, body: res.body!, keys, now: ctx.clock() });
+  for (const k of keys) {
+    const kp = p.keys.get(k.keyid)!;
+    k.proof = kp.proof;
+    if (kp.expires !== undefined) k.proofExpires = kp.expires;
+  }
+  const valid = keys.filter((k) => k.proof === "valid").length;
+  return { keys, life, etag, lastModified, proof: { summary: p.summary, valid, keys: keys.length, notes: p.notes } };
 }
 
 /**
@@ -646,16 +597,15 @@ export async function sync(
     if (typeof a === "string") { result.failures.push({ origin, error: a }); continue; }
     const first = targets.get(a.id);
     if (!first) targets.set(a.id, a);
-    else if (first.type !== a.type || first.url !== a.url) {
+    else if (first.url !== a.url) {
       result.warnings.push(`${origin}: the same identifier as ${first.line} (draft 5.5); only that line is fetched`);
     }
-    if (a.type === "cimd" && a.url.includes("?")) result.warnings.push(`${origin}: CIMD 3: SHOULD NOT contain a query`);
   }
 
   type Outcome = { origin: string; id: string; keys?: Keys; error?: string; fresh?: boolean };
   const resolved = await Promise.all([...targets.values()].map(async (a): Promise<Outcome> => {
     const { id, line: origin } = a;
-    const source = `${a.type} ${a.url}`;
+    const source = a.url;
     const held = byId.get(id) ?? [];
     const c = oldCache[id];
     // The store still holds what the cache describes, resolved the same way.
@@ -669,9 +619,9 @@ export async function sync(
       return { origin, id, error: `last fetch failed; next try after ${new Date(c.retryAt * 1000).toISOString()}` };
     }
     try {
-      // A 304 cannot renew a possession proof, and a CIMD spans two
-      // responses: either way the fetch is unconditional.
-      const conditional = trusted && a.type !== "cimd" && !held.some((e) => e.proof === "valid");
+      // A 304 cannot renew a possession proof: skip conditional revalidation
+      // while any held key still carries a valid proof.
+      const conditional = trusted && !held.some((e) => e.proof === "valid");
       const r = await resolveAgent(a, { limits, now, clock, fetchImpl: opts.fetchImpl, resolve, held, allowPrivate,
         validators: conditional ? { etag: c.etag, lastModified: c.lastModified } : undefined,
         warn: (w) => result.warnings.push(`${origin}: ${w}`) });

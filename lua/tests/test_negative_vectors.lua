@@ -27,6 +27,10 @@ local DISPOSITIONS = {
     -- second with tx.wba_malformed=reject, checked below.
     ["NV-10"] = { outcome = "not-signed/unparsable-field",
         why = "RFC 9651 4.2 ignore branch by default; malformed=reject gives the vector's invalid/malformed-headers" },
+    -- protocol-01: every Signature-Agent value is a direct JWKS URI; a path is
+    -- no longer "not an origin". The draft-00 vector verifies here.
+    ["NV-17"] = { outcome = "verified/",
+        why = "protocol-01 §5.2.1/§5.5: path JWKS URI is valid; draft-00 signature-agent-not-origin no longer applies" },
 }
 
 -- The vectors' proposed reasons, in this verifier's vocabulary. A vector that
@@ -101,7 +105,8 @@ local function store_for(vec, req)
             if iok and item.value.type == "string" then urls[1] = item.value.value end
         end
         for _, u in ipairs(urls) do
-            local id = keys.identifier(u)
+            -- protocol-01: identifier is the JWKS URL itself (no origin→well-known rewrite).
+            local id = keys.url_identifier(u)
             if id then store[id] = { [vec.key.keyid] = { type = "ed25519", key = raw } } end
         end
     end
@@ -119,10 +124,10 @@ for _, group in ipairs(doc.testGroups) do
         local want = vec.expected.outcome
         local disp = DISPOSITIONS[vec.id]
         local verdict
-        if r.status == "verified" or r.agent or r.keyid then
-            verdict = "FAIL: verified"
-        elseif disp then
+        if disp then
             verdict = (ours == disp.outcome) and "dispositioned" or ("FAIL: disposition expects " .. disp.outcome)
+        elseif r.status == "verified" or r.agent or r.keyid then
+            verdict = "FAIL: verified"
         else
             local want_reason = REASONS[vec.expected.reason]
             if r.status ~= want then

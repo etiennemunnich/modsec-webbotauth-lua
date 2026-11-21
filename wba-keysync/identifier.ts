@@ -2,8 +2,8 @@
 // as lua/wba/identifier.lua, which says why each one holds; both suites run
 // every row of lua/tests/fixtures/identifiers.tsv.
 //
-//   directoryIdentifier(origin, strict)  type=directory: the well-known URI
-//   urlIdentifier(value)                 type=jwks_uri / cimd: the member value,
+//   directoryIdentifier(origin, strict)  well-known URI helper (agents.txt shorthand)
+//   urlIdentifier(value)                 JWKS URI (Signature-Agent / agents.txt),
 //                                        normalized, query and fragment discarded
 //   validIdentifier(id)                  id is its own normal form
 

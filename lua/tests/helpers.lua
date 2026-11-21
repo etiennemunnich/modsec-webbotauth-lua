@@ -316,8 +316,10 @@ end
 H.RFC_KEY_RAW = base64.decode("MCowBQYDK2VwAyEAJrQLj5P/89iXES9+vFgrIy29clF9CC/oPPsw3c5D0bs="):sub(-32)
 H.RFC_KEYID = "poqkLGiymh_W0uP6PZFw-dvez3QJT5SolqXBCW38r0U"
 
-H.AGENT = "https://agent.example"
+-- protocol-01: Signature-Agent value is the direct JWK Set URI (often the
+-- well-known directory URL). Identifier == that URL in normal form.
 H.AGENT_ID = "https://agent.example/.well-known/http-message-signatures-directory"
+H.AGENT = H.AGENT_ID
 
 --- Request table in the shape verify.verify() takes.
 --- t.headers: list of { name, value } in arrival order.

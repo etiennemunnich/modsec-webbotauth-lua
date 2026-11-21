@@ -195,7 +195,7 @@ broken() {
   rm -f "$W/keys/wba-keys.tsv.cache.json"
   local rc; rc=$(sync_registry)
   check "$1: key sync fails (exit 2)" "$rc" 2
-  check "  and says why" "$(grep -F "failed: $A: " "$W/sync.log" | grep -cF -- "$2")" 1
+  check "  and says why" "$(grep -F "failed: $ID_A: " "$W/sync.log" | grep -cF -- "$2")" 1
   check "  last good key kept" "$(count "$W/keys/wba-keys.tsv")" 1
   check "  and still verifies" "$(signed "kept-$1" "$W/a2")" 502
   check "  log" "$(verdict "kept-$1")" "verified/ $ID_A"
@@ -228,7 +228,7 @@ check "keys in the store (held for later)" "$(count "$W/keys/wba-keys.tsv")" 1
 check "the key before its nbf" "$(signed early "$W/a-dated")" 403
 check "  log" "$(verdict early)" "unverified/key-not-current "
 dated exp -60
-check "key sync (exp passed): no usable key, exit 2" "$(sync_registry)/$(grep -cF "warning: $A: no usable key" "$W/sync.log")" "2/1"
+check "key sync (exp passed): no usable key, exit 2" "$(sync_registry)/$(grep -cF "warning: $ID_A: no usable key" "$W/sync.log")" "2/1"
 check "keys in the store (bot-a has none now)" "$(count "$W/keys/wba-keys.tsv")" 0
 check "the expired key" "$(signed late "$W/a-dated")" 403
 check "  log" "$(verdict late)" "unverified/unknown-agent "

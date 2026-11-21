@@ -100,7 +100,9 @@ test("checkRules: the policy mode, tokens that can go into a rule, a key source 
   assert.deepEqual(checkRules([], "enforce"), []);
   assert.match(checkRules([], "block").join(), /policy_mode: "block": one of log, enforce/);
   for (const bad of ['A"Bot', "ABot ", " ABot", "A\\Bot", "A(Bot)", "A|B"]) assert.equal(checkRules([{ name: "a", user_agent: bad }], "log").length, 1, bad);
-  assert.match(checkRules([{ name: "a", wba: "https://bot.example/a/path" }], "log").join(), /not a key directory origin or JWK Set URL/);
+  assert.deepEqual(checkRules([{ name: "a", wba: "https://bot.example/a/path" }], "log"), [],
+    "protocol-01: a path JWKS URL is a valid key source");
+  assert.match(checkRules([{ name: "a", wba: "http://bot.example" }], "log").join(), /not an https JWKS URL/);
 });
 
 test("CONF: a before file that CRS loads after the verifier's own before file", () => {

@@ -4,8 +4,10 @@
 //
 //   bun wba-keysync/agents.ts bots.yaml --out /srv/wba/agents.txt [--only name,name]
 //
-// One line per bot with a `wba` source: its origin (a key directory), or its
-// URL with type=jwks_uri when wba_type says so. A bot without `wba` cannot
+// One line per bot with a `wba` source: its HTTPS JWK Set URL (protocol-01).
+// An origin-only `wba` is expanded to the well-known directory URL when
+// writing agents.txt (local-registry shorthand; the wire Signature-Agent
+// value is still the JWKS URI the bot sends). A bot without `wba` cannot
 // sign, so it is left out and counted in the summary. Each line is checked
 // with key sync's own parser (keysync.ts parseAgent), so key sync accepts
 // every line written; a bad `wba` (one with a space in it included) or a bot
@@ -20,7 +22,7 @@
 
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
-import { WELL_KNOWN } from "./identifier.ts";
+import { directoryIdentifier } from "./identifier.ts";
 import { parseAgent } from "./keysync.ts";
 import { expandPreset, filterByPreset } from "./preset.ts";
 import { nameProblem, type Bot } from "./validate.ts";
@@ -28,6 +30,21 @@ import { nameProblem, type Bot } from "./validate.ts";
 class UsageError extends Error {}
 
 export interface AgentsResult { text: string; agents: number; withoutWba: string[] }
+
+/**
+ * Expand an origin-only wba to the well-known JWKS URL; leave path URLs as
+ * written. An origin-shaped value that directoryIdentifier refuses (mixed-case
+ * host, explicit :443, …) is not silently treated as JWKS-at-root.
+ */
+export function wbaFetchUrl(wba: string): string | { error: string } {
+  const dir = directoryIdentifier(wba);
+  if (dir) return dir;
+  const path = wba.replace(/^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#]*/, "").replace(/[?#].*$/, "");
+  if (path === "" || path === "/") {
+    return { error: "not an https origin (https://host[:port] only; lowercase host)" };
+  }
+  return wba;
+}
 
 /** agents.txt for the bots (all, or those named in only), from a file named source. */
 export function agentsFromBots(bots: Bot[], source: string, only?: Set<string>): AgentsResult {
@@ -43,15 +60,18 @@ export function agentsFromBots(bots: Bot[], source: string, only?: Set<string>):
     const bad = nameProblem(bot.name);
     if (bad) throw new Error(`${bad} (validate.ts checks every entry)`);
     if (!bot.wba) { withoutWba.push(bot.name); continue; }
-    // parseAgent splits at whitespace: "URL type=cimd" would change the agent's type.
-    if (typeof bot.wba !== "string" || /\s/.test(bot.wba)) throw new Error(`${bot.name}: wba must be one URL with no spaces (wba_type says the type)`);
-    const type = bot.wba_type ?? "directory";
-    if (type !== "directory" && type !== "jwks_uri") throw new Error(`${bot.name}: wba_type must be directory or jwks_uri, not ${typeof type === "string" ? JSON.stringify(type).slice(0, 80) : typeof type}`);
-    const agent = parseAgent(type === "jwks_uri" ? `${bot.wba} type=jwks_uri` : bot.wba);
+    if (typeof bot.wba !== "string" || /\s/.test(bot.wba)) {
+      throw new Error(`${bot.name}: wba must be one URL with no spaces`);
+    }
+    if (bot.wba_type !== undefined) {
+      throw new Error(`${bot.name}: wba_type is removed under protocol-01; put the full JWKS URL in wba`);
+    }
+    const fetchUrl = wbaFetchUrl(bot.wba);
+    if (typeof fetchUrl === "object") throw new Error(`${bot.name}: wba ${JSON.stringify(bot.wba)}: ${fetchUrl.error}`);
+    const agent = parseAgent(fetchUrl);
     if (typeof agent === "string") throw new Error(`${bot.name}: wba ${JSON.stringify(bot.wba)}: ${agent}`);
-    // A directory is written as its normalised origin (its identifier less the
-    // well-known path); a URL as written.
-    const line = agent.type === "directory" ? agent.id.slice(0, -WELL_KNOWN.length) : `${agent.url} type=${agent.type}`;
+    // Write the normalised identifier (query/fragment already dropped by parseAgent).
+    const line = agent.id;
     const held = byId.get(agent.id);
     if (!held) byId.set(agent.id, { line, names: [bot.name] });
     else if (held.line === line) held.names.push(bot.name);

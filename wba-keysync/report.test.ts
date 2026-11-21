@@ -105,5 +105,5 @@ test("catalogue and render: text from a bots file or the network stays inert Mar
 });
 
 test("agentId: a jwks_uri is normalised the way the verifier logs it", () => {
-  assert.equal(agentId({ name: "j", wba: "https://Agent.Example:443/a/../jwks.json", wba_type: "jwks_uri" }), "https://agent.example/jwks.json");
+  assert.equal(agentId({ name: "j", wba: "https://Agent.Example:443/a/../jwks.json" }), "https://agent.example/jwks.json");
 });

@@ -6,18 +6,16 @@
 //   bun wba-keysync/cli.ts --origins agents.txt --out /etc/modsecurity.d/wba/keys/wba-keys.tsv
 //   node wba-keysync/cli.ts ...        (tested on Node 26.10; needs native type stripping)
 //
-// agents.txt: one agent per line, "#" comments allowed: an https origin (a
-// key directory, the default type), or a URL followed by type=jwks_uri or
-// type=cimd (draft 5.5). These URLs are fetched, and so is the jwks_uri a
-// listed CIMD document names (its server chooses that one). A line key sync
-// cannot parse is a config error: the run stops before any fetch.
+// agents.txt: one agent per line, "#" comments allowed: an HTTPS JWK Set URL
+// (protocol-01 §5.5). Obsolete type=directory|jwks_uri|cimd arguments are
+// refused. A line key sync cannot parse is a config error: the run stops
+// before any fetch.
 //
 // --allow-private-origin https://host[:port], repeatable: key sync never fetches
 // from a private, loopback or link-local address (draft 6.7), except from an
 // origin named here: your own bot on your own network, or a test bot. Only that
-// exact origin is excepted, only for the URLs agents.txt lists on it (never a
-// jwks_uri a CIMD document names), each such fetch is reported, and agents.txt
-// cannot name one.
+// exact origin is excepted, only for the URLs agents.txt lists on it, each
+// such fetch is reported, and agents.txt cannot name one.
 //
 // Exit codes: 0 every origin resolved to at least one usable key; 2 some
 // failed (store still written, their last-good keys kept) or resolved to no

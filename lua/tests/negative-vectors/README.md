@@ -1,6 +1,6 @@
 # Web Bot Auth negative test vectors
 
-Requests a verifier must not verify, for draft-ietf-webbotauth-httpsig-protocol-00, from
+Requests a verifier must not verify, for draft-ietf-webbotauth-httpsig-protocol (negative-vectors corpus still labels document -00; dispositions follow protocol-01 discovery), from
 [ParallaxGrain/webbotauth-negative-vectors](https://github.com/ParallaxGrain/webbotauth-negative-vectors)
 at commit `dd489ba3a302e1009de5329dc359124dd1aed15a` (2026-09-03). They were offered to the draft
 in [issue #11](https://github.com/thibmeu/http-message-signatures-directory/issues/11). CC0 1.0 (see `LICENSE`).
