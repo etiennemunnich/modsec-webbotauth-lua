@@ -37,7 +37,7 @@ const HEADER_V1 = "# wba-keys v1"; // Ed25519 only, no alg, proof none; still re
 
 // Draft section 6.8: verifiers SHOULD reject known test keys: keys whose
 // private half is published, "including the example keys in [RFC 9421]".
-// Same list as verify.lua.
+// Same list as verify.lua (draft 6.8; ASH-suppressed public thumbprints).
 const TEST_KEY_THUMBPRINTS = new Set([
   // RFC 9421 B.1.4 (Ed25519; the draft's E.2 examples), B.1.1 (RSA), B.1.2
   // (RSA-PSS; the draft's E.1 examples), B.1.3 (ECC P-256).

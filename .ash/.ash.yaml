@@ -33,8 +33,8 @@ global_settings:
       reason: TEST_KEY_THUMBPRINTS, the same public list as verify.lua's (draft 6.8).
     - path: wba-keysync/keysync.ts
       rule_id: SECRET-BASE64-HIGH-ENTROPY-STRING
-      line_start: 136
-      line_end: 136
+      line_start: 135
+      line_end: 135
       reason: The base64url alphabet (RFC 4648 5), used to check a final character.
     - path: lua/wba/README.md
       rule_id: SECRET-*
