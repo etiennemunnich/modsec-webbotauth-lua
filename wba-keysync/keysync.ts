@@ -132,6 +132,7 @@ function base64url(bytes: Uint8Array): string {
  */
 function decodeB64url(s: unknown): Uint8Array | null {
   if (typeof s !== "string" || !/^[A-Za-z0-9_-]*$/.test(s) || s.length % 4 === 1) return null;
+  // RFC 4648 alphabet (ASH: SECRET-BASE64-HIGH-ENTROPY-STRING; suppressed in .ash/.ash.yaml).
   const last = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_".indexOf(s.slice(-1));
   if ((s.length % 4 === 2 && last % 16 !== 0) || (s.length % 4 === 3 && last % 4 !== 0)) return null;
   const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4));
